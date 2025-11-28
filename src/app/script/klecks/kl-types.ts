@@ -326,3 +326,44 @@ export type TFillSampling = 'current' | 'all' | 'above';
 export type TUiLayout = 'left' | 'right';
 export type TExportType = 'png' | 'layers' | 'psd';
 export type TInterpolationAlgorithm = 'smooth' | 'pixelated';
+export type ShapeResult =
+  | { type: 'line', x1: number, y1: number, x2: number, y2: number }
+  | { type: 'ellipse', cx: number, cy: number, rx: number, ry: number, rotation: number }
+  | { type: 'rectangle', x: number, y: number, width: number, height: number }
+  | { type: 'triangle', x1: number, y1: number, x2: number, y2: number, x3: number, y3: number };
+
+export function drawShape(
+  ctx: CanvasRenderingContext2D,
+  shape: ShapeResult,
+  brushSize: number,
+  color: string
+) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = brushSize;
+  switch (shape.type) {
+    case "line":
+      ctx.beginPath();
+      ctx.moveTo(shape.x1, shape.y1);
+      ctx.lineTo(shape.x2, shape.y2);
+      ctx.stroke();
+      break;
+    case "ellipse":
+      ctx.beginPath();
+      ctx.ellipse(shape.cx, shape.cy, shape.rx, shape.ry, shape.rotation, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    case "rectangle":
+      ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
+      break;
+    case "triangle":
+      ctx.beginPath();
+      ctx.moveTo(shape.x1, shape.y1);
+      ctx.lineTo(shape.x2, shape.y2);
+      ctx.lineTo(shape.x3, shape.y3);
+      ctx.closePath();
+      ctx.stroke();
+      break;
+  }
+  ctx.restore();
+}

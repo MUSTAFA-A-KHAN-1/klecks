@@ -13,12 +13,23 @@ import { TEaselInterface, TEaselTool } from '../easel.types';
 import { TVector2D } from '../../../../bb/bb-types';
 import { BrushCursorPixelSquare } from './brush-cursor-pixel-square';
 import { BrushCursorRound } from './brush-cursor-round';
+// Ensure this import path is correct based on your project structure
+import { ShapeRecognition } from '../../../../bb/math/shape-recognition';
 
 export type TEaselBrushEvent = {
     x: number;
     y: number;
     isCoalesced: boolean;
     pressure: number;
+};
+
+// Definition for the shape data passed back to the app
+export type TRecognizedShape = { 
+    type: 'circle' | 'rectangle' | 'line'; 
+    x1: number; 
+    y1: number; 
+    x2: number; 
+    y2: number; 
 };
 
 export type TEaselBrushParams = {
@@ -28,6 +39,9 @@ export type TEaselBrushParams = {
     onLineGo: (e: TEaselBrushEvent) => void;
     onLineEnd: () => void;
     onLine: (p1: TVector2D, p2: TVector2D) => void;
+    
+    // New callback to notify the app when a shape is detected
+    onShapeDetected?: (shape: TRecognizedShape) => void; 
 };
 
 type TLineToolDirection = 'x' | 'y';
@@ -39,15 +53,21 @@ export class EaselBrush implements TEaselTool {
     private readonly onLineGo: TEaselBrushParams['onLineGo'];
     private readonly onLineEnd: TEaselBrushParams['onLineEnd'];
     private readonly onLine: TEaselBrushParams['onLine'];
+    private readonly onShapeDetected?: TEaselBrushParams['onShapeDetected']; // New
+    
     private easel: TEaselInterface = {} as TEaselInterface;
     private oldScale: number = 1;
     private isDragging: boolean = false;
-    private eventChain: EventChain; // to explode events
+    private eventChain: EventChain; 
+    
+    // Shape Recognition Instance
+    private shapeRecognition: ShapeRecognition; 
+
     private readonly brushCursorRound: BrushCursorRound;
     private readonly brushCursorPixelSquare: BrushCursorPixelSquare;
     private currentCursor: BrushCursorRound | BrushCursorPixelSquare;
     private lastPos: TVector2D = { x: 0, y: 0 };
-    private lastLineEnd: TVector2D | undefined; // in canvas coords
+    private lastLineEnd: TVector2D | undefined; 
     private lineToolDirection: TLineToolDirection | undefined;
     private firstShiftPos: TVector2D | undefined;
     private hideCursorTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -81,6 +101,42 @@ export class EaselBrush implements TEaselTool {
         const pressure = e.pressure ?? 1;
         const isCoalesced = e.isCoalesced;
         const shiftIsPressed = this.easel.keyListener.isPressed('shift');
+
+        // --- Shape Recognition Integration ---
+       if (!shiftIsPressed && this.onShapeDetected) {
+            // Properties shared by Down/Move events
+            const drawingProps = {
+                pressure,
+                isCoalesced,
+                shiftIsPressed,
+                scale: vTransform.scale,
+            };
+
+            if (e.type === 'pointerdown' && e.button === 'left') {
+                this.shapeRecognition.chainIn({
+                    type: 'down',
+                    x,
+                    y,
+                    ...drawingProps,
+                });
+            } else if (e.type === 'pointermove' && e.button === 'left') {
+                this.shapeRecognition.chainIn({
+                    type: 'move',
+                    x,
+                    y,
+                    ...drawingProps,
+                });
+            } else if (e.type === 'pointerup') {
+                // Fixed: explicitly providing the required properties for 'up'
+                this.shapeRecognition.chainIn({
+                    type: 'up',
+                    isCoalesced,
+                    shiftIsPressed,
+                    scale: vTransform.scale,
+                });
+            }
+        }
+        // -------------------------------------
 
         if (shiftIsPressed && !this.firstShiftPos) {
             this.firstShiftPos = { x: e.relX, y: e.relY };
@@ -145,6 +201,18 @@ export class EaselBrush implements TEaselTool {
         this.onLineGo = p.onLineGo;
         this.onLineEnd = p.onLineEnd;
         this.onLine = p.onLine;
+        this.onShapeDetected = p.onShapeDetected; // Store the callback
+
+        // Initialize Shape Recognition
+        this.shapeRecognition = new ShapeRecognition({
+            onShapeRecognized: (type) => {
+                const shapeData = this.shapeRecognition.getRecognizedShape();
+                if (this.onShapeDetected && shapeData) {
+                    this.onShapeDetected(shapeData);
+                }
+            }
+        });
+
         this.svgEl = BB.createSvg({
             elementType: 'g',
         });
@@ -161,6 +229,8 @@ export class EaselBrush implements TEaselTool {
         });
     }
 
+    // ... (Rest of the class methods remain unchanged: getSvgElement, onPointer, etc.)
+    
     getSvgElement(): SVGElement {
         return this.svgEl;
     }
