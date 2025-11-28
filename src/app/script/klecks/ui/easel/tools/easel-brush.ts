@@ -202,11 +202,13 @@ export class EaselBrush implements TEaselTool {
         this.onLineEnd = p.onLineEnd;
         this.onLine = p.onLine;
         this.onShapeDetected = p.onShapeDetected; // Store the callback
-
+        //print console log when shape recognition is initialized
+        console.log('EaselBrush: Initializing Shape Recogniton');
         // Initialize Shape Recognition
         this.shapeRecognition = new ShapeRecognition({
             onShapeRecognized: (type) => {
                 const shapeData = this.shapeRecognition.getRecognizedShape();
+                console.log('Shape recognized:', type, shapeData);
                 if (this.onShapeDetected && shapeData) {
                     this.onShapeDetected(shapeData);
                 }

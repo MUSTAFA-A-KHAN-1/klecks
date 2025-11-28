@@ -81,6 +81,8 @@ import { requestPersistentStorage } from '../klecks/storage/request-persistent-s
 import { CrossTabChannel } from '../bb/base/cross-tab-channel';
 import { MobileColorUi } from '../klecks/ui/mobile/mobile-color-ui';
 import { getSelectionPath2d } from '../bb/multi-polygon/get-selection-path-2d';
+import { SelectTool } from '../klecks/select-tool/select-tool';
+// import { getEllipsePath } from '../bb/multi-polygon/get-ellipse-path';
 
 importFilters();
 
@@ -145,6 +147,9 @@ export class KlApp {
     private readonly unloadWarningTrigger: UnloadWarningTrigger | undefined;
     private lastSavedHistoryIndex: number = 0;
     private readonly klHistory: KlHistory;
+    private selectTool: SelectTool;
+
+   
 
     private updateLastSaved(): void {
         this.lastSavedHistoryIndex = this.klHistory.getTotalIndex();
@@ -566,7 +571,9 @@ export class KlApp {
                 );
             },
         });
-
+        this.selectTool = new SelectTool({
+            klCanvas: this.klCanvas,
+        });
         this.easelBrush = new EaselBrush({
             radius: 5,
             onLineStart: (e) => {
@@ -614,6 +621,58 @@ export class KlApp {
                     pressure1: 1,
                 } as any);
             },
+            onShapeDetected: (shape) => {
+    console.log("Shape detected by algorithm:", shape);
+     let poly: TVector2D[] = [];
+    
+                 if (!this.selectTool) return;
+       if (shape.type === "circle") {
+            console.log("Drawing circle ");
+             const cx = (shape.x1 + shape.x2) / 2;
+                    const cy = (shape.y1 + shape.y2) / 2;
+                    const rx = Math.abs(shape.x2 - shape.x1) / 2;
+                    const ry = Math.abs(shape.y2 - shape.y1) / 2;
+
+                    // using your existing util
+                    // poly = getEllipsePath(cx, cy, rx, ry, 50)
+                    //     .flat()
+                    //     .map(([x, y]) => ({ x, y }));
+           
+
+        }
+
+        if (shape.type === "rectangle") {
+        console.log("Drawing rectangle from recognized shape");
+
+        const poly = [
+            { x: shape.x1, y: shape.y1 },
+            { x: shape.x2, y: shape.y1 },
+            { x: shape.x2, y: shape.y2 },
+            { x: shape.x1, y: shape.y2 },
+            { x: shape.x1, y: shape.y1 },
+        ];
+
+        // Make future drags rect-based (not lasso/ellipse)
+        this.selectTool.setShape("rect");
+
+        // Actually set selection geometry
+        this.selectTool.addPoly(poly, "new");
+
+        console.log("Selection now:", this.selectTool.getSelection());
+    }
+
+        if (shape.type === "line") {
+            console.log("Drawing line ");
+            poly = [
+                        { x: shape.x1, y: shape.y1 },
+                        { x: shape.x2, y: shape.y2 },
+                    ];
+        }
+         if (poly.length > 0) {
+                    this.selectTool.addPoly(poly, 'new');
+                }
+}
+
         });
 
         const easelHand = new EaselHand({});

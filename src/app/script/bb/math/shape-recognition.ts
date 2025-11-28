@@ -30,6 +30,7 @@ export class ShapeRecognition {
     chainIn(event: TDrawEvent): TDrawEvent | null {
         event = BB.copyObj(event);
         const now = Date.now();
+        console.log('ShapeRecognition chainIn', event.type, this.points.length, 'points recorded');
 
         if (event.type === 'down') {
             this.points = [{ x: event.x, y: event.y, time: now }];
@@ -45,6 +46,7 @@ export class ShapeRecognition {
                 this.points.shift(); // Keep only recent points
             }
             if (!this.isHolding) {
+                console.log('Resetting hold timeout');
                 clearTimeout(this.holdTimeout);
                 this.holdTimeout = setTimeout(() => {
                     this.isHolding = true;
@@ -61,6 +63,7 @@ export class ShapeRecognition {
     }
 
     private recognizeShape(): void {
+        console.log('trying to recognise shape');
         if (this.points.length < 10) return;
 
         const shape = this.detectShape(this.points);
@@ -205,5 +208,105 @@ export class ShapeRecognition {
 
     setOnShapeRecognized(callback: (shape: 'circle' | 'rectangle' | 'line') => void): void {
         this.onShapeRecognized = callback;
+    }
+
+    // Static method for recognizing shape from a list of points (for console API)
+    static recognizeShapeFromPoints(points: { x: number; y: number }[]): 'circle' | 'rectangle' | 'line' | null {
+        if (points.length < 10) return null;
+
+        // Add fake time for compatibility
+        const pointsWithTime = points.map(p => ({ ...p, time: Date.now() }));
+
+        // Check for circle
+        if (ShapeRecognition.isCircleStatic(pointsWithTime)) return 'circle';
+
+        // Check for rectangle
+        if (ShapeRecognition.isRectangleStatic(pointsWithTime)) return 'rectangle';
+
+        // Check for line
+        if (ShapeRecognition.isLineStatic(pointsWithTime)) return 'line';
+
+        return null;
+    }
+
+    private static isCircleStatic(points: { x: number; y: number; time: number }[]): boolean {
+        if (points.length < 20) return false;
+
+        // Calculate centroid
+        let sumX = 0, sumY = 0;
+        for (const p of points) {
+            sumX += p.x;
+            sumY += p.y;
+        }
+        const centerX = sumX / points.length;
+        const centerY = sumY / points.length;
+
+        // Calculate average distance from center
+        let sumDist = 0;
+        for (const p of points) {
+            const dist = Math.sqrt((p.x - centerX) ** 2 + (p.y - centerY) ** 2);
+            sumDist += dist;
+        }
+        const avgRadius = sumDist / points.length;
+
+        // Check if all points are within reasonable distance of average radius
+        let variance = 0;
+        for (const p of points) {
+            const dist = Math.sqrt((p.x - centerX) ** 2 + (p.y - centerY) ** 2);
+            variance += Math.abs(dist - avgRadius);
+        }
+        variance /= points.length;
+
+        // If variance is low relative to radius, it's likely a circle
+        return variance < avgRadius * 0.3;
+    }
+
+    private static isRectangleStatic(points: { x: number; y: number; time: number }[]): boolean {
+        if (points.length < 20) return false;
+
+        // Simple rectangle detection: check if points form a rough rectangle shape
+        const xs = points.map(p => p.x).sort((a, b) => a - b);
+        const ys = points.map(p => p.y).sort((a, b) => a - b);
+
+        const minX = xs[0], maxX = xs[xs.length - 1];
+        const minY = ys[0], maxY = ys[ys.length - 1];
+
+        // Check if points are distributed along the perimeter
+        let cornerCount = 0;
+        for (const p of points) {
+            if ((Math.abs(p.x - minX) < 10 && Math.abs(p.y - minY) < 10) ||
+                (Math.abs(p.x - minX) < 10 && Math.abs(p.y - maxY) < 10) ||
+                (Math.abs(p.x - maxX) < 10 && Math.abs(p.y - minY) < 10) ||
+                (Math.abs(p.x - maxX) < 10 && Math.abs(p.y - maxY) < 10)) {
+                cornerCount++;
+            }
+        }
+
+        return cornerCount >= 3; // At least 3 corners detected
+    }
+
+    private static isLineStatic(points: { x: number; y: number; time: number }[]): boolean {
+        if (points.length < 10) return false;
+
+        // Simple line detection: check if points are roughly colinear
+        const start = points[0];
+        const end = points[points.length - 1];
+
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+
+        if (length < 20) return false; // Too short to be a line
+
+        let totalDeviation = 0;
+        for (let i = 1; i < points.length - 1; i++) {
+            const p = points[i];
+            // Distance from point to line
+            const dist = Math.abs(dy * (p.x - start.x) - dx * (p.y - start.y)) / length;
+            totalDeviation += dist;
+        }
+        const avgDeviation = totalDeviation / (points.length - 2);
+
+        return avgDeviation < 5; // Low deviation indicates a straight line
     }
 }
