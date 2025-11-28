@@ -642,24 +642,38 @@ export class KlApp {
         }
 
         if (shape.type === "rectangle") {
-        console.log("Drawing rectangle from recognized shape");
+            console.log("Drawing rectangle from recognized shape");
 
-        const poly = [
-            { x: shape.x1, y: shape.y1 },
-            { x: shape.x2, y: shape.y1 },
-            { x: shape.x2, y: shape.y2 },
-            { x: shape.x1, y: shape.y2 },
-            { x: shape.x1, y: shape.y1 },
-        ];
+            // normalize corners (drag direction-independent)
+            const x1 = Math.min(shape.x1, shape.x2);
+            const x2 = Math.max(shape.x1, shape.x2);
+            const y1 = Math.min(shape.y1, shape.y2);
+            const y2 = Math.max(shape.y1, shape.y2);
 
-        // Make future drags rect-based (not lasso/ellipse)
-        this.selectTool.setShape("rect");
+            const poly: TVector2D[] = [
+                { x: x1, y: y1 },
+                { x: x2, y: y1 },
+                { x: x2, y: y2 },
+                { x: x1, y: y2 },
+                { x: x1, y: y1 }, // close loop
+            ];
 
-        // Actually set selection geometry
-        this.selectTool.addPoly(poly, "new");
+            // 🔁 same behavior as pressing "L": switch to SELECT tool in UI + easel
+            applyUncommitted();
+            this.easel.setTool('select');
+            this.toolspaceToolRow.setActive('select');
+            mainTabRow?.open('select');
+            updateMainTabVisibility();
 
-        console.log("Selection now:", this.selectTool.getSelection());
-    }
+            // Make SelectTool behave as rectangle mode
+            this.selectTool.setShape("rect");
+
+            // Set selection geometry
+            this.selectTool.addPoly(poly, "new");
+
+            console.log("Selection now:", this.selectTool.getSelection());
+            return; // we're done for rectangles
+        }
 
         if (shape.type === "line") {
             console.log("Drawing line ");
