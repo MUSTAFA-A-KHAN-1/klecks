@@ -23,6 +23,9 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Build languages
+      run: npm run lang:build
+
     - name: Build
       run: npm run build
 
