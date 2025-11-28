@@ -625,10 +625,18 @@ export class KlApp {
             onShapeDetected: (shape) => {
     console.log("Shape detected by algorithm:", shape);
 
-    // 1) Finish any temporary transforms
+    // 1) Finish any temporary transforms / uncommitted stuff
     applyUncommitted();
 
-    // 2) Switch UI to SHAPE tool (instead of select)
+    // Small helper to go back to brush tool
+    const switchToBrush = () => {
+        this.easel.setTool('brush');
+        this.toolspaceToolRow.setActive('brush');
+        mainTabRow?.open('brush');
+        updateMainTabVisibility();
+    };
+
+    // 2) Switch to SHAPE tool for this one action
     this.easel.setTool('shape');
     this.toolspaceToolRow.setActive('shape');
     mainTabRow?.open('shape');
@@ -636,14 +644,14 @@ export class KlApp {
 
     const layerIndex = currentLayer.index;
 
-    // normalize coordinates
+    // normalize coords (independent of drag direction)
     const x1 = Math.min(shape.x1, shape.x2);
     const x2 = Math.max(shape.x1, shape.x2);
     const y1 = Math.min(shape.y1, shape.y2);
     const y2 = Math.max(shape.y1, shape.y2);
     const angleRad = 0;
 
-    // helper to push shape to canvas (mimics ShapeTool.onShape isDone branch)
+    // helper: mimic ShapeTool.onShape(isDone = true) and draw it
     const drawShape = (type: 'rect' | 'ellipse' | 'line') => {
         const shapeObj: any = {
             type,
@@ -679,20 +687,25 @@ export class KlApp {
     if (shape.type === 'rectangle') {
         console.log('Drawing rectangle via ShapeTool');
         drawShape('rect');
+        switchToBrush();   // 🔙 go back to brush
         return;
     }
 
     if (shape.type === 'circle') {
         console.log('Drawing ellipse via ShapeTool');
         drawShape('ellipse');
+        switchToBrush();   // 🔙 go back to brush
         return;
     }
 
     if (shape.type === 'line') {
         console.log('Drawing line via ShapeTool');
         drawShape('line');
+        switchToBrush();   // 🔙 go back to brush
         return;
     }
+
+    // if some other shape type appears, just stay on current tool
 }
 
         });
