@@ -41812,43 +41812,21 @@ var _bb = require("../../bb/bb");
 class LineSmoothing {
     // ----------------------------------- public -----------------------------------
     constructor(p){
-        this.STRAIGHTEN_THRESHOLD = 500 // ms
-        ;
-        this.MOVEMENT_THRESHOLD = 2 // pixels
-        ;
         this.smoothing = (0, _bb.BB).clamp(p.smoothing, 0, 1);
     }
     chainIn(event) {
         event = (0, _bb.BB).copyObj(event);
         clearTimeout(this.timeout);
         clearInterval(this.interval);
-        clearTimeout(this.straightenTimeout);
-        if (event.type === 'down') {
-            this.lastMixedInput = {
-                x: event.x,
-                y: event.y,
-                pressure: event.pressure
-            };
-            this.lineStart = {
-                x: event.x,
-                y: event.y,
-                pressure: event.pressure
-            };
-            this.lastPosition = {
-                x: event.x,
-                y: event.y
-            };
-        }
+        if (event.type === 'down') this.lastMixedInput = {
+            x: event.x,
+            y: event.y,
+            pressure: event.pressure
+        };
         if (event.type === 'move') {
             const inputX = event.x;
             const inputY = event.y;
             const inputPressure = event.pressure;
-            // Check if movement is significant
-            const distance = Math.sqrt(Math.pow(inputX - this.lastMixedInput.x, 2) + Math.pow(inputY - this.lastMixedInput.y, 2));
-            if (distance > this.MOVEMENT_THRESHOLD) this.lastPosition = {
-                x: inputX,
-                y: inputY
-            };
             event.x = (0, _bb.BB).mix(event.x, this.lastMixedInput.x, this.smoothing);
             event.y = (0, _bb.BB).mix(event.y, this.lastMixedInput.y, this.smoothing);
             event.pressure = (0, _bb.BB).mix(event.pressure, this.lastMixedInput.pressure, this.smoothing);
@@ -41857,23 +41835,6 @@ class LineSmoothing {
                 y: event.y,
                 pressure: event.pressure
             };
-            // Set up straightening timeout if user has been still
-            if (distance <= this.MOVEMENT_THRESHOLD && this.lineStart) this.straightenTimeout = setTimeout(()=>{
-                if (this.lineStart && this.lastMixedInput) {
-                    console.log('Straightening line due to stillness.');
-                    // Output a straight line event
-                    const straightEvent = {
-                        type: 'line',
-                        x0: this.lineStart.x,
-                        y0: this.lineStart.y,
-                        x1: this.lastMixedInput.x,
-                        y1: this.lastMixedInput.y,
-                        pressure0: this.lineStart.pressure,
-                        pressure1: this.lastMixedInput.pressure
-                    };
-                    this.chainOut?.(straightEvent);
-                }
-            }, this.STRAIGHTEN_THRESHOLD); // Wait for the threshold time
             if (this.smoothing > 0) this.timeout = setTimeout(()=>{
                 this.interval = setInterval(()=>{
                     event = JSON.parse(JSON.stringify(event));
@@ -41888,11 +41849,6 @@ class LineSmoothing {
                     this.chainOut?.(event);
                 }, 35);
             }, 80);
-        }
-        if (event.type === 'up') {
-            this.lineStart = undefined;
-            this.lastPosition = undefined;
-            clearTimeout(this.straightenTimeout);
         }
         return event;
     }
