@@ -41856,6 +41856,7 @@ class LineSmoothing {
             // Set up straightening timeout if user has been still
             if (now - this.lastMoveTime >= this.STRAIGHTEN_THRESHOLD && this.lineStart) this.straightenTimeout = setTimeout(()=>{
                 if (this.lineStart && this.lastMixedInput) {
+                    console.log('Straightening line due to inactivity.');
                     // Output a straight line event
                     const straightEvent = {
                         type: 'line',
