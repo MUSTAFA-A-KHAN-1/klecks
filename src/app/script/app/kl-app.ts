@@ -82,7 +82,6 @@ import { CrossTabChannel } from '../bb/base/cross-tab-channel';
 import { MobileColorUi } from '../klecks/ui/mobile/mobile-color-ui';
 import { getSelectionPath2d } from '../bb/multi-polygon/get-selection-path-2d';
 import { SelectTool } from '../klecks/select-tool/select-tool';
-import { getEllipsePath } from '../bb/multi-polygon/get-ellipse-path';
 // import { getEllipsePath } from '../bb/multi-polygon/get-ellipse-path';
 
 importFilters();
@@ -149,8 +148,6 @@ export class KlApp {
     private lastSavedHistoryIndex: number = 0;
     private readonly klHistory: KlHistory;
     private selectTool: SelectTool;
-
-   
 
     private updateLastSaved(): void {
         this.lastSavedHistoryIndex = this.klHistory.getTotalIndex();
@@ -419,6 +416,9 @@ export class KlApp {
             chainArr: [this.lineSanitizer as any, lineSmoothing as any],
         });
 
+        // pending shape detected during current stroke, handled on 'up'
+        let pendingShapeDetection: any = null;
+
         drawEventChain.setChainOut(((event: TDrawEvent) => {
             if (event.type === 'down') {
                 this.toolspace.style.pointerEvents = 'none';
@@ -435,6 +435,79 @@ export class KlApp {
                 this.toolspace.style.pointerEvents = '';
                 currentBrushUi.endLine();
                 this.easel.requestRender();
+
+                // If a shape was detected during this stroke, clean up & draw perfect shape
+                if (pendingShapeDetection) {
+                    const shape = pendingShapeDetection;
+                    pendingShapeDetection = null;
+
+                    applyUncommitted();
+                    // undo last imperfect stroke
+                    undo(false);
+
+                    // temporarily go to shape tool (for consistency)
+                    this.easel.setTool('shape');
+                    this.toolspaceToolRow.setActive('shape');
+                    mainTabRow?.open('shape');
+                    updateMainTabVisibility();
+
+                    const layerIndex = currentLayer.index;
+
+                    const x1 = Math.min(shape.x1, shape.x2);
+                    const x2 = Math.max(shape.x1, shape.x2);
+                    const y1 = Math.min(shape.y1, shape.y2);
+                    const y2 = Math.max(shape.y1, shape.y2);
+                    const angleRad = 0;
+
+                    const drawShape = (type: 'rect' | 'ellipse' | 'line') => {
+                        const shapeObj: any = {
+                            type,
+                            x1,
+                            y1,
+                            x2,
+                            y2,
+                            angleRad,
+                            isOutwards: shapeUi.getIsOutwards(),
+                            opacity: shapeUi.getOpacity(),
+                            isEraser: shapeUi.getIsEraser(),
+                            doLockAlpha: shapeUi.getDoLockAlpha(),
+                        };
+
+                        if (type === 'line') {
+                            shapeObj.strokeRgb = this.klColorSlider.getColor();
+                            shapeObj.lineWidth = shapeUi.getLineWidth();
+                            shapeObj.isAngleSnap = shapeUi.getIsSnap();
+                        } else {
+                            shapeObj.isFixedRatio = shapeUi.getIsFixed();
+                            if (shapeUi.getMode() === 'stroke') {
+                                shapeObj.strokeRgb = this.klColorSlider.getColor();
+                                shapeObj.lineWidth = shapeUi.getLineWidth();
+                            } else {
+                                shapeObj.fillRgb = this.klColorSlider.getColor();
+                            }
+                        }
+
+                        this.klCanvas.drawShape(layerIndex, shapeObj);
+                        this.easelProjectUpdater.update();
+                    };
+
+                    if (shape.type === 'rectangle') {
+                        console.log('Drawing clean rectangle from detection');
+                        drawShape('rect');
+                    } else if (shape.type === 'circle') {
+                        console.log('Drawing clean ellipse from detection');
+                        drawShape('ellipse');
+                    } else if (shape.type === 'line') {
+                        console.log('Drawing clean line from detection');
+                        drawShape('line');
+                    }
+
+                    // auto return to brush
+                    this.easel.setTool('brush');
+                    this.toolspaceToolRow.setActive('brush');
+                    mainTabRow?.open('brush');
+                    updateMainTabVisibility();
+                }
             }
             if (event.type === 'line') {
                 currentBrushUi.getBrush().drawLineSegment(event.x0, event.y0, event.x1, event.y1);
@@ -623,91 +696,10 @@ export class KlApp {
                 } as any);
             },
             onShapeDetected: (shape) => {
-    console.log("Shape detected by algorithm:", shape);
-
-    // 1) Finish any temporary transforms / uncommitted stuff
-    applyUncommitted();
-
-    // Small helper to go back to brush tool
-    const switchToBrush = () => {
-        this.easel.setTool('brush');
-        this.toolspaceToolRow.setActive('brush');
-        mainTabRow?.open('brush');
-        updateMainTabVisibility();
-    };
-
-    // 2) Switch to SHAPE tool for this one action
-    this.easel.setTool('shape');
-    this.toolspaceToolRow.setActive('shape');
-    mainTabRow?.open('shape');
-    updateMainTabVisibility();
-
-    const layerIndex = currentLayer.index;
-
-    // normalize coords (independent of drag direction)
-    const x1 = Math.min(shape.x1, shape.x2);
-    const x2 = Math.max(shape.x1, shape.x2);
-    const y1 = Math.min(shape.y1, shape.y2);
-    const y2 = Math.max(shape.y1, shape.y2);
-    const angleRad = 0;
-
-    // helper: mimic ShapeTool.onShape(isDone = true) and draw it
-    const drawShape = (type: 'rect' | 'ellipse' | 'line') => {
-        const shapeObj: any = {
-            type,
-            x1,
-            y1,
-            x2,
-            y2,
-            angleRad,
-            isOutwards: shapeUi.getIsOutwards(),
-            opacity: shapeUi.getOpacity(),
-            isEraser: shapeUi.getIsEraser(),
-            doLockAlpha: shapeUi.getDoLockAlpha(),
-        };
-
-        if (type === 'line') {
-            shapeObj.strokeRgb = this.klColorSlider.getColor();
-            shapeObj.lineWidth = shapeUi.getLineWidth();
-            shapeObj.isAngleSnap = shapeUi.getIsSnap();
-        } else {
-            shapeObj.isFixedRatio = shapeUi.getIsFixed();
-            if (shapeUi.getMode() === 'stroke') {
-                shapeObj.strokeRgb = this.klColorSlider.getColor();
-                shapeObj.lineWidth = shapeUi.getLineWidth();
-            } else {
-                shapeObj.fillRgb = this.klColorSlider.getColor();
-            }
-        }
-
-        this.klCanvas.drawShape(layerIndex, shapeObj);
-        this.easelProjectUpdater.update();
-    };
-
-    if (shape.type === 'rectangle') {
-        console.log('Drawing rectangle via ShapeTool');
-        drawShape('rect');
-        switchToBrush();   // 🔙 go back to brush
-        return;
-    }
-
-    if (shape.type === 'circle') {
-        console.log('Drawing ellipse via ShapeTool');
-        drawShape('ellipse');
-        switchToBrush();   // 🔙 go back to brush
-        return;
-    }
-
-    if (shape.type === 'line') {
-        console.log('Drawing line via ShapeTool');
-        drawShape('line');
-        switchToBrush();   // 🔙 go back to brush
-        return;
-    }
-
-    // if some other shape type appears, just stay on current tool
-}
-
+                console.log('Shape detected by algorithm:', shape);
+                // just store the shape; handle it on stroke 'up'
+                pendingShapeDetection = shape;
+            },
         });
 
         const easelHand = new EaselHand({});
@@ -1202,7 +1194,6 @@ export class KlApp {
 
         BB.append(this.rootEl, [
             this.easel.getElement(),
-            // this.klCanvasWorkspace.getElement(),
             this.toolspace,
             this.mobileUi.getElement(),
         ]);
@@ -1328,7 +1319,6 @@ export class KlApp {
                 } else if (activeStr === 'shape') {
                     this.easel.setTool('shape');
                 } else if (activeStr === 'select') {
-                    // this.klCanvasWorkspace.setMode('shape');
                     this.easel.setTool('select');
                 } else {
                     throw new Error('unknown activeStr');
@@ -2122,11 +2112,9 @@ export class KlApp {
                     image: tabSettingsImg,
                     onOpen: () => {
                         settingsUi.getElement().style.display = 'block';
-                        // settingsTab.setIsVisible(true);
                     },
                     onClose: () => {
                         settingsUi.getElement().style.display = 'none';
-                        // settingsTab.setIsVisible(false);
                     },
                     css: {
                         minWidth: '45px',
