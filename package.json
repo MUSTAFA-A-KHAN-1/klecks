@@ -16,7 +16,11 @@
     "build:help": "parcel build src/help.html --public-url .",
     "lang:add": "node src/languages/generate.js add",
     "lang:sync": "node src/languages/generate.js sync",
-    "lang:build": "node src/languages/generate.js build"
+    "lang:build": "node src/languages/generate.js build",
+    "deploy": "npm run lang:build && npm run build && gh-pages -d dist"
+  },
+  "devDependencies": {
+    "gh-pages": "^6.0.0"
   },
   "dependencies": {
     "@parcel/transformer-glsl": "2.16.1",
