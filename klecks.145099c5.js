@@ -41845,7 +41845,10 @@ class LineSmoothing {
             const inputPressure = event.pressure;
             // Check if movement is significant
             const distance = Math.sqrt(Math.pow(inputX - this.lastMixedInput.x, 2) + Math.pow(inputY - this.lastMixedInput.y, 2));
-            if (distance > this.MOVEMENT_THRESHOLD) this.lastMoveTime = now;
+            if (distance > this.MOVEMENT_THRESHOLD) this.lastPosition = {
+                x: inputX,
+                y: inputY
+            };
             event.x = (0, _bb.BB).mix(event.x, this.lastMixedInput.x, this.smoothing);
             event.y = (0, _bb.BB).mix(event.y, this.lastMixedInput.y, this.smoothing);
             event.pressure = (0, _bb.BB).mix(event.pressure, this.lastMixedInput.pressure, this.smoothing);
