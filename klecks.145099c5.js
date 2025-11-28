@@ -1089,7 +1089,6 @@ class KlApp {
         if (!this.bottomBar) return;
         const isVisible = this.toolspaceInner.scrollHeight + 40 < window.innerHeight;
         const newDisplay = isVisible ? '' : 'none';
-        // check to prevent infinite MutationObserver loop in Pale Moon
         if (newDisplay !== this.bottomBarWrapper.style.display) this.bottomBarWrapper.style.display = newDisplay;
     }
     updateUi() {
@@ -1127,8 +1126,6 @@ class KlApp {
             return await (0, _klCanvasToPsdBlob.klCanvasToPsdBlob)(this.klCanvas);
         };
         this.embed = p.embed;
-        // default 2048, unless your screen is bigger than that (that computer then probably has the horsepower for that)
-        // but not larger than 4096 - a fairly arbitrary decision
         const maxCanvasSize = Math.min(4096, Math.max(2048, Math.max(window.screen.width, window.screen.height)));
         this.uiLayout = this.embed ? 'left' : (0, _localStorage.LocalStorage).getItem('uiState') ? (0, _localStorage.LocalStorage).getItem('uiState') : 'right';
         const projectStore = (0, _klIndexedDb.KL_INDEXED_DB).getIsAvailable() ? new (0, _projectStore.ProjectStore)() : undefined;
@@ -1176,8 +1173,7 @@ class KlApp {
                 return (0, _drawProject.drawProject)(this.klCanvas.getProject(), factor);
             });
         }
-        if (p.project) // attempt at freeing memory
-        p.project.layers.forEach((layer)=>{
+        if (p.project) p.project.layers.forEach((layer)=>{
             if (layer.image instanceof HTMLCanvasElement) (0, _bb.BB).freeCanvas(layer.image);
             layer.image = null;
         });
@@ -1199,7 +1195,6 @@ class KlApp {
         let currentBrushId;
         let lastNonEraserBrushId;
         let currentLayer = this.klCanvas.getLayer(this.klCanvas.getLayerCount() - 1);
-        // when cycling through brushes you need to know the next non-eraser brush
         const getNextBrushId = ()=>{
             if (currentBrushId === 'eraserBrush') return lastNonEraserBrushId;
             const keyArr = Object.keys(brushUiMap).filter((item)=>item !== 'eraserBrush');
@@ -1253,7 +1248,7 @@ class KlApp {
                 lineSmoothing
             ]
         });
-        // pending shape detected during current stroke, handled on 'up'
+        // shape detected during current stroke, handled on 'up'
         let pendingShapeDetection = null;
         drawEventChain.setChainOut((event)=>{
             if (event.type === 'down') {
@@ -1277,18 +1272,14 @@ class KlApp {
                 this.toolspace.style.pointerEvents = '';
                 currentBrushUi.endLine();
                 this.easel.requestRender();
-                // If a shape was detected during this stroke, clean up & draw perfect shape
+                // handle shape snapping AFTER stroke finished & history updated
                 if (pendingShapeDetection) {
                     const shape = pendingShapeDetection;
                     pendingShapeDetection = null;
+                    // 1) finish temp transforms etc.
                     applyUncommitted();
-                    // undo last imperfect stroke
+                    // 2) undo imperfect stroke
                     undo(false);
-                    // temporarily go to shape tool (for consistency)
-                    this.easel.setTool('shape');
-                    this.toolspaceToolRow.setActive('shape');
-                    mainTabRow?.open('shape');
-                    updateMainTabVisibility();
                     const layerIndex = currentLayer.index;
                     const x1 = Math.min(shape.x1, shape.x2);
                     const x2 = Math.max(shape.x1, shape.x2);
@@ -1331,12 +1322,39 @@ class KlApp {
                     } else if (shape.type === 'line') {
                         console.log('Drawing clean line from detection');
                         drawShape('line');
-                    }
-                    // auto return to brush
-                    this.easel.setTool('brush');
-                    this.toolspaceToolRow.setActive('brush');
-                    mainTabRow?.open('brush');
+                    } else return;
+                    // 4) create selection around shape
+                    const poly = [
+                        {
+                            x: x1,
+                            y: y1
+                        },
+                        {
+                            x: x2,
+                            y: y1
+                        },
+                        {
+                            x: x2,
+                            y: y2
+                        },
+                        {
+                            x: x1,
+                            y: y2
+                        },
+                        {
+                            x: x1,
+                            y: y1
+                        }
+                    ];
+                    // switch to select tool
+                    this.easel.setTool('select');
+                    this.toolspaceToolRow.setActive('select');
+                    mainTabRow?.open('select');
                     updateMainTabVisibility();
+                    this.selectTool.setShape('rect');
+                    this.selectTool.addPoly(poly, 'new');
+                // if you later expose a KlAppSelect.startTransformFromSelection(),
+                // call it here to auto-start transform.
                 }
             }
             if (event.type === 'line') {
@@ -1365,17 +1383,12 @@ class KlApp {
                 }
             }
         };
-        /**
-         * Uncommited action is something like select tool > transform which puts the canvas and UI into
-         * a temporary state. Changes need to be committed or discarded *before* doing something else.
-         *
-         * returns true if something was applied
-         */ const applyUncommitted = ()=>{
+        const applyUncommitted = ()=>{
             let didApply = false;
             if (this.easel.getTool() === 'select') didApply = klAppSelect.commitTransform();
             return didApply;
         };
-        /** see applyUncommitted **/ const discardUncommitted = ()=>{
+        const discardUncommitted = ()=>{
             if (this.easel.getTool() === 'select') return klAppSelect.discardTransform();
             return false;
         };
@@ -1387,7 +1400,7 @@ class KlApp {
                 const composedAfter = this.klHistory.getComposed();
                 this.klCanvas.updateViaComposed(composedBefore, composedAfter);
                 setCurrentLayer(this.klCanvas.getLayer(composedAfter.layerMap[composedAfter.activeLayerId].index));
-                this.easelProjectUpdater.update(); // triggers render
+                this.easelProjectUpdater.update();
                 const dimensionChanged = composedBefore.size.width !== composedAfter.size.width || composedBefore.size.height !== composedAfter.size.height;
                 if (dimensionChanged) this.easel.resetOrFitTransform(true);
                 this.easelBrush.setLastDrawEvent();
@@ -1399,16 +1412,14 @@ class KlApp {
             if (!tempHistory.canDecreaseIndex()) discardUncommitted();
             const composedBefore = this.klHistory.getComposed();
             const result = klHistoryExecutor.undo();
-            if (!result) // didn't do anything
-            return;
+            if (!result) return;
             propagateUndoRedoChanges(result.type, composedBefore);
             if (showMessage) this.statusOverlay.out((0, _language.LANG)('undo'), true);
         };
         const redo = (showMessage)=>{
             const composedBefore = this.klHistory.getComposed();
             const result = klHistoryExecutor.redo();
-            if (!result) // didn't do anything
-            return;
+            if (!result) return;
             propagateUndoRedoChanges(result.type, composedBefore);
             if (showMessage) this.statusOverlay.out((0, _language.LANG)('redo'), true);
         };
@@ -1440,7 +1451,6 @@ class KlApp {
         this.easelBrush = new (0, _easelBrush.EaselBrush)({
             radius: 5,
             onLineStart: (e)=>{
-                // expects TDrawEvent
                 drawEventChain.chainIn({
                     type: 'down',
                     scale: this.easel.getTransform().scale,
@@ -1452,7 +1462,6 @@ class KlApp {
                 });
             },
             onLineGo: (e)=>{
-                // expects TDrawEvent
                 drawEventChain.chainIn({
                     type: 'move',
                     scale: this.easel.getTransform().scale,
@@ -1464,7 +1473,6 @@ class KlApp {
                 });
             },
             onLineEnd: ()=>{
-                // expects TDrawEvent
                 drawEventChain.chainIn({
                     type: 'up',
                     scale: this.easel.getTransform().scale,
@@ -1473,7 +1481,6 @@ class KlApp {
                 });
             },
             onLine: (p1, p2)=>{
-                // expects TDrawEvent
                 drawEventChain.chainIn({
                     type: 'line',
                     x0: p1.x,
@@ -1486,7 +1493,6 @@ class KlApp {
             },
             onShapeDetected: (shape)=>{
                 console.log('Shape detected by algorithm:', shape);
-                // just store the shape; handle it on stroke 'up'
                 pendingShapeDetection = shape;
             }
         });
@@ -1815,7 +1821,6 @@ class KlApp {
             onUp: (keyStr, event)=>{}
         });
         const brushUiMap = {};
-        // create brush UIs
         Object.entries((0, _kl.KL).BRUSHES_UI).forEach(([b, brushUi])=>{
             const ui = new brushUi.Ui({
                 klHistory: this.klHistory,
@@ -1853,9 +1858,7 @@ class KlApp {
         this.toolspaceInner = (0, _bb.BB).el({
             parent: this.toolspace
         });
-        this.toolspace.oncontextmenu = ()=>{
-            return false;
-        };
+        this.toolspace.oncontextmenu = ()=>false;
         this.toolspace.onclick = (0, _bb.BB).handleClick;
         this.mobileBrushUi = new (0, _mobileBrushUi.MobileBrushUi)({
             onBrush: ()=>{
@@ -2000,8 +2003,7 @@ class KlApp {
         this.toolspaceInner.append(toolspaceTopRow.getElement());
         this.toolspaceToolRow = new (0, _kl.KL).ToolspaceToolRow({
             onActivate: (activeStr)=>{
-                if (activeStr !== 'hand') // hand only one that doesn't cause changes
-                applyUncommitted();
+                if (activeStr !== 'hand') applyUncommitted();
                 if (activeStr === 'brush') this.easel.setTool('brush');
                 else if (activeStr === 'hand') this.easel.setTool('hand');
                 else if (activeStr === 'paintBucket') this.easel.setTool('paintBucket');
@@ -2344,7 +2346,6 @@ class KlApp {
                 return this.klCanvas.getCompleteCanvas(1, maskSelection);
             }, (inputObj)=>{
                 if (inputObj.left === 0 && inputObj.right === 0 && inputObj.top === 0 && inputObj.bottom === 0) return;
-                //do a crop
                 (0, _kl.KL).FILTER_LIB.cropExtend.apply({
                     layer: currentLayer,
                     klCanvas: this.klCanvas,
@@ -2369,8 +2370,6 @@ class KlApp {
                 return;
             }
             const meta = projectStore.getCurrentMeta();
-            // Check is project already opened in other tab.
-            // (if it's already open in the current tab, user showed intentionality. Don't ask again.)
             if (meta && this.klHistory.getComposed().projectId.value !== meta.projectId) {
                 let doOpen = true;
                 const crossTabChannel = new (0, _crossTabChannel.CrossTabChannel)('kl-tab-communication');
@@ -2455,7 +2454,6 @@ class KlApp {
             this.easelProjectUpdater.update();
             this.easel.resetOrFitTransform(true);
             setTimeout(()=>{
-                // timeout to overwrite zoom overlay msg
                 this.statusOverlay.out((0, _language.LANG)('file-storage-restored'));
             });
             closeLoader?.();
@@ -2479,7 +2477,6 @@ class KlApp {
                 shareImage(callback);
             },
             onUpload: ()=>{
-                // on upload
                 applyUncommitted();
                 (0, _kl.KL).imgurUpload(this.klCanvas, this.rootEl, p.app && p.app.imgurKey ? p.app.imgurKey : '', ()=>this.updateLastSaved());
             },
@@ -2794,14 +2791,9 @@ class KlApp {
             window.addEventListener('orientationchange', ()=>{
                 this.resize(window.innerWidth, window.innerHeight);
             });
-            // 2024-08: window.resize doesn't fire on iPad Safari when:
-            // pinch zoomed page, then reload, and un-pinch-zoom page
-            // therefor also listen to visualViewport.
             if ('visualViewport' in window && visualViewport !== null) visualViewport.addEventListener('resize', ()=>{
                 this.resize(window.innerWidth, window.innerHeight);
             });
-            // iPad doesn't trigger 'resize' event when using text zoom, although it's resizing the window.
-            // Workaround: place a div in the body that fills the window, and use a ResizeObserver
             const windowResizeWatcher = (0, _bb.BB).el({
                 parent: document.body,
                 css: {
@@ -2816,19 +2808,16 @@ class KlApp {
                 }
             });
             try {
-                // Not all browsers support ResizeObserver. Not critical though.
                 const observer = new ResizeObserver(()=>this.resize(window.innerWidth, window.innerHeight));
                 observer.observe(windowResizeWatcher);
             } catch (e) {
                 windowResizeWatcher.remove();
             }
-            // prevent ctrl scroll -> zooming page
             this.rootEl.addEventListener('wheel', (event)=>{
                 if (keyListener.isPressed('ctrl')) event.preventDefault();
             }, {
                 passive: false
             });
-            //maybe prevent zooming on safari mac os - todo still needed?
             const prevent = (e)=>{
                 e.preventDefault();
             };
@@ -2858,7 +2847,6 @@ class KlApp {
         return this.rootEl;
     }
     resize(w, h) {
-        // iPad scrolls down when increasing text zoom
         if (window.scrollY > 0) window.scrollTo(0, 0);
         if (this.uiWidth === Math.max(0, w) && this.uiHeight === Math.max(0, h)) return;
         this.uiWidth = Math.max(0, w);
