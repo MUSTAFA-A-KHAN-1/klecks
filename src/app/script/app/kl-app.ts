@@ -82,6 +82,7 @@ import { CrossTabChannel } from '../bb/base/cross-tab-channel';
 import { MobileColorUi } from '../klecks/ui/mobile/mobile-color-ui';
 import { getSelectionPath2d } from '../bb/multi-polygon/get-selection-path-2d';
 import { SelectTool } from '../klecks/select-tool/select-tool';
+import { getEllipsePath } from '../bb/multi-polygon/get-ellipse-path';
 // import { getEllipsePath } from '../bb/multi-polygon/get-ellipse-path';
 
 importFilters();
@@ -623,68 +624,75 @@ export class KlApp {
             },
             onShapeDetected: (shape) => {
     console.log("Shape detected by algorithm:", shape);
-     let poly: TVector2D[] = [];
-    
-                 if (!this.selectTool) return;
-       if (shape.type === "circle") {
-            console.log("Drawing circle ");
-             const cx = (shape.x1 + shape.x2) / 2;
-                    const cy = (shape.y1 + shape.y2) / 2;
-                    const rx = Math.abs(shape.x2 - shape.x1) / 2;
-                    const ry = Math.abs(shape.y2 - shape.y1) / 2;
 
-                    // using your existing util
-                    // poly = getEllipsePath(cx, cy, rx, ry, 50)
-                    //     .flat()
-                    //     .map(([x, y]) => ({ x, y }));
-           
+    // 1) Finish any temporary transforms
+    applyUncommitted();
 
+    // 2) Switch UI to SHAPE tool (instead of select)
+    this.easel.setTool('shape');
+    this.toolspaceToolRow.setActive('shape');
+    mainTabRow?.open('shape');
+    updateMainTabVisibility();
+
+    const layerIndex = currentLayer.index;
+
+    // normalize coordinates
+    const x1 = Math.min(shape.x1, shape.x2);
+    const x2 = Math.max(shape.x1, shape.x2);
+    const y1 = Math.min(shape.y1, shape.y2);
+    const y2 = Math.max(shape.y1, shape.y2);
+    const angleRad = 0;
+
+    // helper to push shape to canvas (mimics ShapeTool.onShape isDone branch)
+    const drawShape = (type: 'rect' | 'ellipse' | 'line') => {
+        const shapeObj: any = {
+            type,
+            x1,
+            y1,
+            x2,
+            y2,
+            angleRad,
+            isOutwards: shapeUi.getIsOutwards(),
+            opacity: shapeUi.getOpacity(),
+            isEraser: shapeUi.getIsEraser(),
+            doLockAlpha: shapeUi.getDoLockAlpha(),
+        };
+
+        if (type === 'line') {
+            shapeObj.strokeRgb = this.klColorSlider.getColor();
+            shapeObj.lineWidth = shapeUi.getLineWidth();
+            shapeObj.isAngleSnap = shapeUi.getIsSnap();
+        } else {
+            shapeObj.isFixedRatio = shapeUi.getIsFixed();
+            if (shapeUi.getMode() === 'stroke') {
+                shapeObj.strokeRgb = this.klColorSlider.getColor();
+                shapeObj.lineWidth = shapeUi.getLineWidth();
+            } else {
+                shapeObj.fillRgb = this.klColorSlider.getColor();
+            }
         }
 
-        if (shape.type === "rectangle") {
-            console.log("Drawing rectangle from recognized shape");
+        this.klCanvas.drawShape(layerIndex, shapeObj);
+        this.easelProjectUpdater.update();
+    };
 
-            // normalize corners (drag direction-independent)
-            const x1 = Math.min(shape.x1, shape.x2);
-            const x2 = Math.max(shape.x1, shape.x2);
-            const y1 = Math.min(shape.y1, shape.y2);
-            const y2 = Math.max(shape.y1, shape.y2);
+    if (shape.type === 'rectangle') {
+        console.log('Drawing rectangle via ShapeTool');
+        drawShape('rect');
+        return;
+    }
 
-            const poly: TVector2D[] = [
-                { x: x1, y: y1 },
-                { x: x2, y: y1 },
-                { x: x2, y: y2 },
-                { x: x1, y: y2 },
-                { x: x1, y: y1 }, // close loop
-            ];
+    if (shape.type === 'circle') {
+        console.log('Drawing ellipse via ShapeTool');
+        drawShape('ellipse');
+        return;
+    }
 
-            // 🔁 same behavior as pressing "L": switch to SELECT tool in UI + easel
-            applyUncommitted();
-            this.easel.setTool('select');
-            this.toolspaceToolRow.setActive('select');
-            mainTabRow?.open('select');
-            updateMainTabVisibility();
-
-            // Make SelectTool behave as rectangle mode
-            this.selectTool.setShape("rect");
-
-            // Set selection geometry
-            this.selectTool.addPoly(poly, "new");
-
-            console.log("Selection now:", this.selectTool.getSelection());
-            return; // we're done for rectangles
-        }
-
-        if (shape.type === "line") {
-            console.log("Drawing line ");
-            poly = [
-                        { x: shape.x1, y: shape.y1 },
-                        { x: shape.x2, y: shape.y2 },
-                    ];
-        }
-         if (poly.length > 0) {
-                    this.selectTool.addPoly(poly, 'new');
-                }
+    if (shape.type === 'line') {
+        console.log('Drawing line via ShapeTool');
+        drawShape('line');
+        return;
+    }
 }
 
         });
