@@ -41812,7 +41812,6 @@ var _bb = require("../../bb/bb");
 class LineSmoothing {
     // ----------------------------------- public -----------------------------------
     constructor(p){
-        this.lastMoveTime = 0;
         this.STRAIGHTEN_THRESHOLD = 500 // ms
         ;
         this.MOVEMENT_THRESHOLD = 2 // pixels
@@ -41835,13 +41834,15 @@ class LineSmoothing {
                 y: event.y,
                 pressure: event.pressure
             };
-            this.lastMoveTime = Date.now();
+            this.lastPosition = {
+                x: event.x,
+                y: event.y
+            };
         }
         if (event.type === 'move') {
             const inputX = event.x;
             const inputY = event.y;
             const inputPressure = event.pressure;
-            const now = Date.now();
             // Check if movement is significant
             const distance = Math.sqrt(Math.pow(inputX - this.lastMixedInput.x, 2) + Math.pow(inputY - this.lastMixedInput.y, 2));
             if (distance > this.MOVEMENT_THRESHOLD) this.lastMoveTime = now;
@@ -41854,9 +41855,9 @@ class LineSmoothing {
                 pressure: event.pressure
             };
             // Set up straightening timeout if user has been still
-            if (now - this.lastMoveTime >= this.STRAIGHTEN_THRESHOLD && this.lineStart) this.straightenTimeout = setTimeout(()=>{
+            if (distance <= this.MOVEMENT_THRESHOLD && this.lineStart) this.straightenTimeout = setTimeout(()=>{
                 if (this.lineStart && this.lastMixedInput) {
-                    console.log('Straightening line due to inactivity.');
+                    console.log('Straightening line due to stillness.');
                     // Output a straight line event
                     const straightEvent = {
                         type: 'line',
@@ -41869,7 +41870,7 @@ class LineSmoothing {
                     };
                     this.chainOut?.(straightEvent);
                 }
-            }, 100); // Small delay to ensure it's intentional
+            }, this.STRAIGHTEN_THRESHOLD); // Wait for the threshold time
             if (this.smoothing > 0) this.timeout = setTimeout(()=>{
                 this.interval = setInterval(()=>{
                     event = JSON.parse(JSON.stringify(event));
@@ -41885,7 +41886,11 @@ class LineSmoothing {
                 }, 35);
             }, 80);
         }
-        if (event.type === 'up') this.lineStart = undefined;
+        if (event.type === 'up') {
+            this.lineStart = undefined;
+            this.lastPosition = undefined;
+            clearTimeout(this.straightenTimeout);
+        }
         return event;
     }
     setChainOut(func) {
