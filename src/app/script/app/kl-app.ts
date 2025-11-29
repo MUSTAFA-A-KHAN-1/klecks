@@ -116,6 +116,17 @@ type TKlAppToolId =
     | 'rotate'
     | 'zoom';
 
+type TLiveShapeType = 'rect' | 'ellipse' | 'line';
+
+type TLiveShape = {
+    type: TLiveShapeType;
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    angleRad: number;
+    layerIndex: number;
+};
 export class KlApp {
     private readonly rootEl: HTMLElement;
     private uiWidth: number;
@@ -148,6 +159,8 @@ export class KlApp {
     private lastSavedHistoryIndex: number = 0;
     private readonly klHistory: KlHistory;
     private selectTool: SelectTool;
+    private liveShape: TLiveShape | null = null;
+
 
     private updateLastSaved(): void {
         this.lastSavedHistoryIndex = this.klHistory.getTotalIndex();
@@ -257,8 +270,8 @@ export class KlApp {
             this.embed
                 ? 'left'
                 : LocalStorage.getItem('uiState')
-                  ? LocalStorage.getItem('uiState')
-                  : 'right'
+                    ? LocalStorage.getItem('uiState')
+                    : 'right'
         ) as TUiLayout;
         const projectStore = KL_INDEXED_DB.getIsAvailable() ? new ProjectStore() : undefined;
         this.rootEl = BB.el({
@@ -444,10 +457,7 @@ export class KlApp {
                     const shape = pendingShapeDetection;
                     pendingShapeDetection = null;
 
-                    // 1) finish temp transforms etc.
                     applyUncommitted();
-
-                    // 2) undo imperfect stroke
                     undo(false);
 
                     const layerIndex = currentLayer.index;
@@ -458,71 +468,59 @@ export class KlApp {
                     const y2 = Math.max(shape.y1, shape.y2);
                     const angleRad = 0;
 
-                    const drawShape = (type: 'rect' | 'ellipse' | 'line') => {
-                        const shapeObj: any = {
-                            type,
-                            x1,
-                            y1,
-                            x2,
-                            y2,
-                            angleRad,
-                            isOutwards: shapeUi.getIsOutwards(),
-                            opacity: shapeUi.getOpacity(),
-                            isEraser: shapeUi.getIsEraser(),
-                            doLockAlpha: shapeUi.getDoLockAlpha(),
-                        };
+                    let type: TLiveShapeType | null = null;
+                    if (shape.type === 'rectangle') type = 'rect';
+                    else if (shape.type === 'circle') type = 'ellipse';
+                    else if (shape.type === 'line') type = 'line';
 
-                        if (type === 'line') {
-                            shapeObj.strokeRgb = this.klColorSlider.getColor();
-                            shapeObj.lineWidth = shapeUi.getLineWidth();
-                            shapeObj.isAngleSnap = shapeUi.getIsSnap();
-                        } else {
-                            shapeObj.isFixedRatio = shapeUi.getIsFixed();
-                            if (shapeUi.getMode() === 'stroke') {
-                                shapeObj.strokeRgb = this.klColorSlider.getColor();
-                                shapeObj.lineWidth = shapeUi.getLineWidth();
-                            } else {
-                                shapeObj.fillRgb = this.klColorSlider.getColor();
-                            }
-                        }
+                    if (!type) return;
 
-                        this.klCanvas.drawShape(layerIndex, shapeObj);
-                        this.easelProjectUpdater.update();
+                    // store live shape (for now we’ll still bake it immediately)
+                    this.liveShape = {
+                        type,
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        angleRad,
+                        layerIndex,
                     };
 
-                    if (shape.type === 'rectangle') {
-                        console.log('Drawing clean rectangle from detection');
-                        drawShape('rect');
-                    } else if (shape.type === 'circle') {
-                        console.log('Drawing clean ellipse from detection');
-                        drawShape('ellipse');
-                    } else if (shape.type === 'line') {
-                        console.log('Drawing clean line from detection');
-                        drawShape('line');
+                    // Immediately bake (we’ll change this in Phase 3)
+                    const ls = this.liveShape;
+                    const shapeObj: any = {
+                        type: ls.type,
+                        x1: ls.x1,
+                        y1: ls.y1,
+                        x2: ls.x2,
+                        y2: ls.y2,
+                        angleRad: ls.angleRad,
+                        isOutwards: shapeUi.getIsOutwards(),
+                        opacity: shapeUi.getOpacity(),
+                        isEraser: shapeUi.getIsEraser(),
+                        doLockAlpha: shapeUi.getDoLockAlpha(),
+                    };
+
+                    if (ls.type === 'line') {
+                        shapeObj.strokeRgb = this.klColorSlider.getColor();
+                        shapeObj.lineWidth = shapeUi.getLineWidth();
+                        shapeObj.isAngleSnap = shapeUi.getIsSnap();
                     } else {
-                        return;
+                        shapeObj.isFixedRatio = shapeUi.getIsFixed();
+                        if (shapeUi.getMode() === 'stroke') {
+                            shapeObj.strokeRgb = this.klColorSlider.getColor();
+                            shapeObj.lineWidth = shapeUi.getLineWidth();
+                        } else {
+                            shapeObj.fillRgb = this.klColorSlider.getColor();
+                        }
                     }
 
-                    // 4) create selection around shape
-                    const poly: TVector2D[] = [
-                        { x: x1, y: y1 },
-                        { x: x2, y: y1 },
-                        { x: x2, y: y2 },
-                        { x: x1, y: y2 },
-                        { x: x1, y: y1 },
-                    ];
+                    this.klCanvas.drawShape(layerIndex, shapeObj);
+                    this.easelProjectUpdater.update();
 
-                    // switch to select tool
-                    this.easel.setTool('select');
-                    this.toolspaceToolRow.setActive('select');
-                    mainTabRow?.open('select');
-                    updateMainTabVisibility();
-
-                    this.selectTool.setShape('rect');
-                    this.selectTool.addPoly(poly, 'new');
-
-                    // if you later expose a KlAppSelect.startTransformFromSelection(),
-                    // call it here to auto-start transform.
+                    // For now, we clear liveShape so it behaves like before
+                    this.liveShape = null;
+                    
                 }
             }
 
@@ -796,20 +794,20 @@ export class KlApp {
                                 angleRad: angleRad,
                                 fill: textToolSettings.fill
                                     ? {
-                                          color: {
-                                              ...this.klColorSlider.getColor(),
-                                              a: textToolSettings.fill.color.a,
-                                          },
-                                      }
+                                        color: {
+                                            ...this.klColorSlider.getColor(),
+                                            a: textToolSettings.fill.color.a,
+                                        },
+                                    }
                                     : undefined,
                                 stroke: textToolSettings.stroke
                                     ? {
-                                          ...textToolSettings.stroke,
-                                          color: {
-                                              ...this.klColorSlider.getSecondaryRGB(),
-                                              a: textToolSettings.stroke.color.a,
-                                          },
-                                      }
+                                        ...textToolSettings.stroke,
+                                        color: {
+                                            ...this.klColorSlider.getSecondaryRGB(),
+                                            a: textToolSettings.stroke.color.a,
+                                        },
+                                    }
                                     : undefined,
                             },
 
@@ -979,7 +977,7 @@ export class KlApp {
                                     setTimeout(() => {
                                         throw new Error(
                                             'keyboard-shortcut: failed to store browser storage, ' +
-                                                e,
+                                            e,
                                         );
                                     }, 0);
                                     this.statusOverlay.out(
@@ -1101,7 +1099,7 @@ export class KlApp {
                     this.klColorSlider.swapColors();
                 }
             },
-            onUp: (keyStr, event) => {},
+            onUp: (keyStr, event) => { },
         });
 
         const brushUiMap: {
@@ -1694,7 +1692,7 @@ export class KlApp {
                     this.easelProjectUpdater.update();
                     this.easel.resetOrFitTransform(true);
                 },
-                onCancel: () => {},
+                onCancel: () => { },
             });
         };
 
@@ -1704,7 +1702,7 @@ export class KlApp {
                 canvas: this.klCanvas.getCompleteCanvas(1),
                 fileName: BB.getDate() + KL_CONFIG.filenameBase + '.png',
                 title: BB.getDate() + KL_CONFIG.filenameBase + '.png',
-                callback: callback ? callback : () => {},
+                callback: callback ? callback : () => { },
             });
         };
 
@@ -1861,43 +1859,43 @@ export class KlApp {
         const fileUi = this.embed
             ? null
             : new KL.FileUi({
-                  klRootEl: this.rootEl,
-                  projectStore: projectStore,
-                  getProject: () => this.klCanvas.getProject(),
-                  exportType: exportType,
-                  onExportTypeChange: (type) => {
-                      exportType = type;
-                  },
-                  onFileSelect: (files, optionsStr) =>
-                      importHandler.handleFileSelect(files, optionsStr),
-                  onSaveImageToComputer: () => {
-                      applyUncommitted();
-                      this.saveToComputer.save();
-                  },
-                  onNewImage: showNewImageDialog,
-                  onShareImage: (callback) => {
-                      applyUncommitted();
-                      shareImage(callback);
-                  },
-                  onUpload: () => {
-                      applyUncommitted();
-                      KL.imgurUpload(
-                          this.klCanvas,
-                          this.rootEl,
-                          p.app && p.app.imgurKey ? p.app.imgurKey : '',
-                          () => this.updateLastSaved(),
-                      );
-                  },
-                  applyUncommitted: () => applyUncommitted(),
-                  onChangeShowSaveDialog: (b) => {
-                      this.saveToComputer.setShowSaveDialog(b);
-                  },
-                  klRecoveryManager,
-                  onOpenBrowserStorage,
-                  onStoredToBrowserStorage: () => {
-                      this.updateLastSaved();
-                  },
-              });
+                klRootEl: this.rootEl,
+                projectStore: projectStore,
+                getProject: () => this.klCanvas.getProject(),
+                exportType: exportType,
+                onExportTypeChange: (type) => {
+                    exportType = type;
+                },
+                onFileSelect: (files, optionsStr) =>
+                    importHandler.handleFileSelect(files, optionsStr),
+                onSaveImageToComputer: () => {
+                    applyUncommitted();
+                    this.saveToComputer.save();
+                },
+                onNewImage: showNewImageDialog,
+                onShareImage: (callback) => {
+                    applyUncommitted();
+                    shareImage(callback);
+                },
+                onUpload: () => {
+                    applyUncommitted();
+                    KL.imgurUpload(
+                        this.klCanvas,
+                        this.rootEl,
+                        p.app && p.app.imgurKey ? p.app.imgurKey : '',
+                        () => this.updateLastSaved(),
+                    );
+                },
+                applyUncommitted: () => applyUncommitted(),
+                onChangeShowSaveDialog: (b) => {
+                    this.saveToComputer.setShowSaveDialog(b);
+                },
+                klRecoveryManager,
+                onOpenBrowserStorage,
+                onStoredToBrowserStorage: () => {
+                    this.updateLastSaved();
+                },
+            });
 
         if (!this.embed && projectStore) {
             this.saveReminder = new SaveReminder({
