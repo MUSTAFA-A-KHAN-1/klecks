@@ -1,8 +1,6 @@
 import { BB } from '../../bb/bb';
 import { TDrawEvent } from '../../../../app/script/klecks/kl-types';
 
-
-
 /**
  * Shape recognition. EventChain element. Detects when cursor is held at a point and recognizes shapes.
  *
@@ -67,6 +65,7 @@ export class ShapeRecognition {
         if (this.points.length < 10) return;
 
         const shape = this.detectShape(this.points);
+        console.log('detected shape:', shape);
         if (shape) {
             const params = this.getShapeParams(shape, this.points);
             this.recognizedShape = { type: shape, ...params };
@@ -79,22 +78,60 @@ export class ShapeRecognition {
     private detectShape(points: { x: number; y: number; time: number }[]): 'circle' | 'rectangle' | 'line' | null {
         if (points.length < 10) return null;
 
-        // Check for circle
-        if (this.isCircle(points)) return 'circle';
+        // First handle very elongated shapes as lines only.
+        const xs = points.map(p => p.x);
+        const ys = points.map(p => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const aspect = height === 0 ? Infinity : width / height;
 
-        // Check for rectangle
+        // If extremely elongated → likely a line
+        if (aspect > 5 || aspect < 0.2) {
+            if (this.isLine(points)) return 'line';
+            return null;
+        }
+
+        // Normal aspect ratio:
+        // 1. Try circle for near-square bounding boxes
+        if (aspect > 0.7 && aspect < 1.3) {
+            if (this.isCircle(points)) return 'circle';
+        }
+
+        // 2. Try rectangle (for most non-elongated shapes)
         if (this.isRectangle(points)) return 'rectangle';
 
-        // Check for line
+        // 3. Fallback to line
         if (this.isLine(points)) return 'line';
 
         return null;
     }
 
+    // --------- circle detection (round-ish bbox + radius variance) ---------
     private isCircle(points: { x: number; y: number; time: number }[]): boolean {
         if (points.length < 20) return false;
 
-        // Calculate centroid
+        // Bounding box
+        const xs = points.map(p => p.x);
+        const ys = points.map(p => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+
+        const width = maxX - minX;
+        const height = maxY - minY;
+
+        if (width < 10 || height < 10) return false;
+
+        const aspect = width / height;
+        // Circle should not be too elongated
+        if (aspect < 0.7 || aspect > 1.3) return false;
+
+        // Centroid
         let sumX = 0, sumY = 0;
         for (const p of points) {
             sumX += p.x;
@@ -103,7 +140,7 @@ export class ShapeRecognition {
         const centerX = sumX / points.length;
         const centerY = sumY / points.length;
 
-        // Calculate average distance from center
+        // Average radius
         let sumDist = 0;
         for (const p of points) {
             const dist = Math.sqrt((p.x - centerX) ** 2 + (p.y - centerY) ** 2);
@@ -111,7 +148,7 @@ export class ShapeRecognition {
         }
         const avgRadius = sumDist / points.length;
 
-        // Check if all points are within reasonable distance of average radius
+        // Variance of radius
         let variance = 0;
         for (const p of points) {
             const dist = Math.sqrt((p.x - centerX) ** 2 + (p.y - centerY) ** 2);
@@ -119,38 +156,61 @@ export class ShapeRecognition {
         }
         variance /= points.length;
 
-        // If variance is low relative to radius, it's likely a circle
-        return variance < avgRadius * 0.3;
+        // More forgiving than original
+        return variance < avgRadius * 0.5;
     }
 
+    // --------- rectangle detection (relaxed, corner-based, avoids lines) ---------
     private isRectangle(points: { x: number; y: number; time: number }[]): boolean {
-        if (points.length < 20) return false;
+        if (points.length < 12) return false;
 
-        // Simple rectangle detection: check if points form a rough rectangle shape
-        const xs = points.map(p => p.x).sort((a, b) => a - b);
-        const ys = points.map(p => p.y).sort((a, b) => a - b);
+        const xs = points.map(p => p.x);
+        const ys = points.map(p => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
 
-        const minX = xs[0], maxX = xs[xs.length - 1];
-        const minY = ys[0], maxY = ys[ys.length - 1];
+        const width = maxX - minX;
+        const height = maxY - minY;
 
-        // Check if points are distributed along the perimeter
-        let cornerCount = 0;
-        for (const p of points) {
-            if ((Math.abs(p.x - minX) < 10 && Math.abs(p.y - minY) < 10) ||
-                (Math.abs(p.x - minX) < 10 && Math.abs(p.y - maxY) < 10) ||
-                (Math.abs(p.x - maxX) < 10 && Math.abs(p.y - minY) < 10) ||
-                (Math.abs(p.x - maxX) < 10 && Math.abs(p.y - maxY) < 10)) {
-                cornerCount++;
-            }
+        if (width < 15 || height < 15) return false;
+
+        const aspect = width / height;
+        // Extremely elongated shapes are probably not rectangles; let line handle those
+        if (aspect > 5 || aspect < 0.2) {
+            return false;
         }
 
-        return cornerCount >= 3; // At least 3 corners detected
+        const cornerThreshold = Math.max(8, Math.min(width, height) * 0.25);
+
+        let topLeft = false;
+        let topRight = false;
+        let bottomLeft = false;
+        let bottomRight = false;
+
+        for (const p of points) {
+            const dxLeft = Math.abs(p.x - minX);
+            const dxRight = Math.abs(p.x - maxX);
+            const dyTop = Math.abs(p.y - minY);
+            const dyBottom = Math.abs(p.y - maxY);
+
+            if (dxLeft < cornerThreshold && dyTop < cornerThreshold) topLeft = true;
+            if (dxRight < cornerThreshold && dyTop < cornerThreshold) topRight = true;
+            if (dxLeft < cornerThreshold && dyBottom < cornerThreshold) bottomLeft = true;
+            if (dxRight < cornerThreshold && dyBottom < cornerThreshold) bottomRight = true;
+        }
+
+        const cornerCount = [topLeft, topRight, bottomLeft, bottomRight].filter(v => v).length;
+
+        // Freehand rectangle just needs ~3 corners to be hit
+        return cornerCount >= 3;
     }
 
+    // --------- line detection (more tolerant of wobble) ---------
     private isLine(points: { x: number; y: number; time: number }[]): boolean {
-        if (points.length < 10) return false;
+        if (points.length < 5) return false;
 
-        // Simple line detection: check if points are roughly colinear
         const start = points[0];
         const end = points[points.length - 1];
 
@@ -158,18 +218,19 @@ export class ShapeRecognition {
         const dy = end.y - start.y;
         const length = Math.sqrt(dx * dx + dy * dy);
 
-        if (length < 20) return false; // Too short to be a line
+        if (length < 15) return false; // Too short to be a line
 
         let totalDeviation = 0;
         for (let i = 1; i < points.length - 1; i++) {
             const p = points[i];
             // Distance from point to line
-            const dist = Math.abs(dy * (p.x - start.x) - dx * (p.y - start.y)) / length;
+            const dist = Math.abs(dy * (p.x - start.x) - dx * (p.y - start.y)) / (length || 1);
             totalDeviation += dist;
         }
-        const avgDeviation = totalDeviation / (points.length - 2);
+        const avgDeviation = totalDeviation / Math.max(1, points.length - 2);
 
-        return avgDeviation < 5; // Low deviation indicates a straight line
+        // Allow more wobble than before
+        return avgDeviation < 7;
     }
 
     private getShapeParams(type: 'circle' | 'rectangle' | 'line', points: { x: number; y: number; time: number }[]): { x1: number, y1: number, x2: number, y2: number } {
@@ -217,22 +278,52 @@ export class ShapeRecognition {
         // Add fake time for compatibility
         const pointsWithTime = points.map(p => ({ ...p, time: Date.now() }));
 
-        // Check for circle
-        if (ShapeRecognition.isCircleStatic(pointsWithTime)) return 'circle';
+        // Reuse same logic but via static helpers
+        // First handle elongated shapes as line-only
+        const xs = pointsWithTime.map(p => p.x);
+        const ys = pointsWithTime.map(p => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const aspect = height === 0 ? Infinity : width / height;
 
-        // Check for rectangle
+        if (aspect > 5 || aspect < 0.2) {
+            if (ShapeRecognition.isLineStatic(pointsWithTime)) return 'line';
+            return null;
+        }
+
+        if (aspect > 0.7 && aspect < 1.3) {
+            if (ShapeRecognition.isCircleStatic(pointsWithTime)) return 'circle';
+        }
+
         if (ShapeRecognition.isRectangleStatic(pointsWithTime)) return 'rectangle';
-
-        // Check for line
         if (ShapeRecognition.isLineStatic(pointsWithTime)) return 'line';
 
         return null;
     }
 
+    // --------- static circle / rectangle / line for console API ---------
     private static isCircleStatic(points: { x: number; y: number; time: number }[]): boolean {
         if (points.length < 20) return false;
 
-        // Calculate centroid
+        const xs = points.map(p => p.x);
+        const ys = points.map(p => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+
+        const width = maxX - minX;
+        const height = maxY - minY;
+
+        if (width < 10 || height < 10) return false;
+
+        const aspect = width / height;
+        if (aspect < 0.7 || aspect > 1.3) return false;
+
         let sumX = 0, sumY = 0;
         for (const p of points) {
             sumX += p.x;
@@ -241,7 +332,6 @@ export class ShapeRecognition {
         const centerX = sumX / points.length;
         const centerY = sumY / points.length;
 
-        // Calculate average distance from center
         let sumDist = 0;
         for (const p of points) {
             const dist = Math.sqrt((p.x - centerX) ** 2 + (p.y - centerY) ** 2);
@@ -249,7 +339,6 @@ export class ShapeRecognition {
         }
         const avgRadius = sumDist / points.length;
 
-        // Check if all points are within reasonable distance of average radius
         let variance = 0;
         for (const p of points) {
             const dist = Math.sqrt((p.x - centerX) ** 2 + (p.y - centerY) ** 2);
@@ -257,38 +346,56 @@ export class ShapeRecognition {
         }
         variance /= points.length;
 
-        // If variance is low relative to radius, it's likely a circle
-        return variance < avgRadius * 0.3;
+        return variance < avgRadius * 0.5;
     }
 
     private static isRectangleStatic(points: { x: number; y: number; time: number }[]): boolean {
-        if (points.length < 20) return false;
+        if (points.length < 12) return false;
 
-        // Simple rectangle detection: check if points form a rough rectangle shape
-        const xs = points.map(p => p.x).sort((a, b) => a - b);
-        const ys = points.map(p => p.y).sort((a, b) => a - b);
+        const xs = points.map(p => p.x);
+        const ys = points.map(p => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
 
-        const minX = xs[0], maxX = xs[xs.length - 1];
-        const minY = ys[0], maxY = ys[ys.length - 1];
+        const width = maxX - minX;
+        const height = maxY - minY;
 
-        // Check if points are distributed along the perimeter
-        let cornerCount = 0;
-        for (const p of points) {
-            if ((Math.abs(p.x - minX) < 10 && Math.abs(p.y - minY) < 10) ||
-                (Math.abs(p.x - minX) < 10 && Math.abs(p.y - maxY) < 10) ||
-                (Math.abs(p.x - maxX) < 10 && Math.abs(p.y - minY) < 10) ||
-                (Math.abs(p.x - maxX) < 10 && Math.abs(p.y - maxY) < 10)) {
-                cornerCount++;
-            }
+        if (width < 15 || height < 15) return false;
+
+        const aspect = width / height;
+        if (aspect > 5 || aspect < 0.2) {
+            return false;
         }
 
-        return cornerCount >= 3; // At least 3 corners detected
+        const cornerThreshold = Math.max(8, Math.min(width, height) * 0.25);
+
+        let topLeft = false;
+        let topRight = false;
+        let bottomLeft = false;
+        let bottomRight = false;
+
+        for (const p of points) {
+            const dxLeft = Math.abs(p.x - minX);
+            const dxRight = Math.abs(p.x - maxX);
+            const dyTop = Math.abs(p.y - minY);
+            const dyBottom = Math.abs(p.y - maxY);
+
+            if (dxLeft < cornerThreshold && dyTop < cornerThreshold) topLeft = true;
+            if (dxRight < cornerThreshold && dyTop < cornerThreshold) topRight = true;
+            if (dxLeft < cornerThreshold && dyBottom < cornerThreshold) bottomLeft = true;
+            if (dxRight < cornerThreshold && dyBottom < cornerThreshold) bottomRight = true;
+        }
+
+        const cornerCount = [topLeft, topRight, bottomLeft, bottomRight].filter(v => v).length;
+
+        return cornerCount >= 3;
     }
 
     private static isLineStatic(points: { x: number; y: number; time: number }[]): boolean {
-        if (points.length < 10) return false;
+        if (points.length < 5) return false;
 
-        // Simple line detection: check if points are roughly colinear
         const start = points[0];
         const end = points[points.length - 1];
 
@@ -296,17 +403,16 @@ export class ShapeRecognition {
         const dy = end.y - start.y;
         const length = Math.sqrt(dx * dx + dy * dy);
 
-        if (length < 20) return false; // Too short to be a line
+        if (length < 15) return false;
 
         let totalDeviation = 0;
         for (let i = 1; i < points.length - 1; i++) {
             const p = points[i];
-            // Distance from point to line
-            const dist = Math.abs(dy * (p.x - start.x) - dx * (p.y - start.y)) / length;
+            const dist = Math.abs(dy * (p.x - start.x) - dx * (p.y - start.y)) / (length || 1);
             totalDeviation += dist;
         }
-        const avgDeviation = totalDeviation / (points.length - 2);
+        const avgDeviation = totalDeviation / Math.max(1, points.length - 2);
 
-        return avgDeviation < 5; // Low deviation indicates a straight line
+        return avgDeviation < 7;
     }
 }
