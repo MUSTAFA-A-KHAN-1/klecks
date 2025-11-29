@@ -520,7 +520,53 @@ export class KlApp {
 
                     // For now, we clear liveShape so it behaves like before
                     this.liveShape = null;
-                    
+                    const makeShapeObj = () => {
+                        if (!this.liveShape) return null;
+                        const ls = this.liveShape;
+                        const shapeObj: any = {
+                            type: ls.type,
+                            x1: ls.x1,
+                            y1: ls.y1,
+                            x2: ls.x2,
+                            y2: ls.y2,
+                            angleRad: ls.angleRad,
+                            isOutwards: shapeUi.getIsOutwards(),
+                            opacity: shapeUi.getOpacity(),
+                            isEraser: shapeUi.getIsEraser(),
+                            doLockAlpha: shapeUi.getDoLockAlpha(),
+                        };
+
+                        if (ls.type === 'line') {
+                            shapeObj.strokeRgb = this.klColorSlider.getColor();
+                            shapeObj.lineWidth = shapeUi.getLineWidth();
+                            shapeObj.isAngleSnap = shapeUi.getIsSnap();
+                        } else {
+                            shapeObj.isFixedRatio = shapeUi.getIsFixed();
+                            if (shapeUi.getMode() === 'stroke') {
+                                shapeObj.strokeRgb = this.klColorSlider.getColor();
+                                shapeObj.lineWidth = shapeUi.getLineWidth();
+                            } else {
+                                shapeObj.fillRgb = this.klColorSlider.getColor();
+                            }
+                        }
+                        return shapeObj;
+                    };
+
+                    this.klCanvas.setComposite(layerIndex, {
+                        draw: (ctx) => {
+                            const shapeObj = makeShapeObj();
+                            if (!shapeObj) return;
+                            KL.drawShape(ctx, shapeObj, undefined);
+                        },
+                    });
+                    this.easelProjectUpdater.update();
+
+                    // switch to Shape tool
+                    this.easel.setTool('shape');
+                    this.toolspaceToolRow.setActive('shape');
+                    mainTabRow?.open('shape');
+                    updateMainTabVisibility();
+
                 }
             }
 
