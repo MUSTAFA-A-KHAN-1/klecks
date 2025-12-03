@@ -144,7 +144,7 @@ export class ShapeRecognition {
                 if (typeof candidate?.detectShape === 'function') {
                     this.externalRecognizer = {
                         recognize: (points) => candidate.detectShape(points),
-                        getParams: (type, points) => (typeof candidate.getShapeParams === 'function' ? candidate.getShapeParams(type, points) : this.getShapeParams(type, points))
+                        getParams: (type, points) => (typeof candidate.getShapeParams === 'function' ? candidate.getShapeParams(type, points) : this.getShapeParams(type, points as any))
                     };
                     console.log('ShapeRecognition: using', pkg, 'detectShape');
                     return;
