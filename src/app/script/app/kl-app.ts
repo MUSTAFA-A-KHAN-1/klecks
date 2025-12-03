@@ -790,21 +790,31 @@ export class KlApp {
     // === NEW BEHAVIOUR END ===
 
     // 3) map shape type
-    let type: TLiveShapeType | null = null;
-    if (shape.type === 'rectangle') type = 'rect';
-    else if (shape.type === 'circle') type = 'ellipse';
-    else if (shape.type === 'line') type = 'line';
-    if (!type) {
-        return;
-    }
+  // 3) map shape type + coordinates (preserve endpoints for lines)
+let type: TLiveShapeType | null = null;
+if (shape.type === 'rectangle') type = 'rect';
+else if (shape.type === 'circle') type = 'ellipse';
+else if (shape.type === 'line') type = 'line';
+if (!type) {
+    return;
+}
 
-    const x1 = Math.min(shape.x1, shape.x2);
-    const x2 = Math.max(shape.x1, shape.x2);
-    const y1 = Math.min(shape.y1, shape.y2);
-    const y2 = Math.max(shape.y1, shape.y2);
-    const angleRad = 0;
-    const layerIndex = currentLayer.index;
-
+let x1: number, x2: number, y1: number, y2: number;
+if (type === 'line') {
+    // preserve original order for lines so direction/angle is retained
+    x1 = shape.x1;
+    y1 = shape.y1;
+    x2 = shape.x2;
+    y2 = shape.y2;
+} else {
+    // positive width/height for rect/ellipse
+    x1 = Math.min(shape.x1, shape.x2);
+    x2 = Math.max(shape.x1, shape.x2);
+    y1 = Math.min(shape.y1, shape.y2);
+    y2 = Math.max(shape.y1, shape.y2);
+}
+const angleRad = 0;
+const layerIndex = currentLayer.index;
     // 4) store live shape + enter liveShape mode
     this.liveShape = {
         type,
