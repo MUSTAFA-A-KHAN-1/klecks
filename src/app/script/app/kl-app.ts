@@ -767,98 +767,104 @@ export class KlApp {
                 } as any);
             },
             onShapeDetected: (shape) => {
-                console.log('Shape detected by algorithm:', shape);
+    console.log('Shape detected by algorithm:', shape);
 
-                // if we already converted this stroke, ignore
-                if (this.drawMode === 'liveShape') {
-                    return;
-                }
+    // if we already converted this stroke, ignore
+    if (this.drawMode === 'liveShape') {
+        return;
+    }
 
-                // 1) finish current brush stroke as if pointer went up
-                drawEventChain.chainIn({
-                    type: 'up',
-                    scale: this.easel.getTransform().scale,
-                    shiftIsPressed: false,
-                    isCoalesced: false,
-                } as any);
+    // === NEW BEHAVIOUR START ===
+    // Stop the brush's internal stroke without emitting an 'up' to the drawEventChain,
+    // so the pointer is still considered down and subsequent move events will continue.
+    try {
+        // gracefully call endLine if available
+        (currentBrushUi as any)?.endLine?.();
+    } catch (e) {
+        // fallback: nothing, just continue — endLine should exist in normal circumstances
+        console.warn('endLine call failed on currentBrushUi', e);
+    }
 
-                // 2) undo the imperfect stroke
-                undo(false);
+    // remove the imperfect stroke from history/pixels (same as before)
+    undo(false);
+    // === NEW BEHAVIOUR END ===
 
-                // 3) map shape type
-                let type: TLiveShapeType | null = null;
-                if (shape.type === 'rectangle') type = 'rect';
-                else if (shape.type === 'circle') type = 'ellipse';
-                else if (shape.type === 'line') type = 'line';
-                if (!type) {
-                    return;
-                }
+    // 3) map shape type
+    let type: TLiveShapeType | null = null;
+    if (shape.type === 'rectangle') type = 'rect';
+    else if (shape.type === 'circle') type = 'ellipse';
+    else if (shape.type === 'line') type = 'line';
+    if (!type) {
+        return;
+    }
 
-                const x1 = Math.min(shape.x1, shape.x2);
-                const x2 = Math.max(shape.x1, shape.x2);
-                const y1 = Math.min(shape.y1, shape.y2);
-                const y2 = Math.max(shape.y1, shape.y2);
-                const angleRad = 0;
-                const layerIndex = currentLayer.index;
+    const x1 = Math.min(shape.x1, shape.x2);
+    const x2 = Math.max(shape.x1, shape.x2);
+    const y1 = Math.min(shape.y1, shape.y2);
+    const y2 = Math.max(shape.y1, shape.y2);
+    const angleRad = 0;
+    const layerIndex = currentLayer.index;
 
-                // 4) store live shape + enter liveShape mode
-                this.liveShape = {
-                    type,
-                    x1,
-                    y1,
-                    x2,
-                    y2,
-                    angleRad,
-                    layerIndex,
-                };
-                this.drawMode = 'liveShape';
+    // 4) store live shape + enter liveShape mode
+    this.liveShape = {
+        type,
+        x1,
+        y1,
+        x2,
+        y2,
+        angleRad,
+        layerIndex,
+    };
+    // IMPORTANT: keep drawMode as liveShape so move events stretch it
+    this.drawMode = 'liveShape';
 
-                // 5) draw overlay based on liveShape
-                const makeShapeObj = () => {
-                    if (!this.liveShape) return null;
-                    const ls = this.liveShape;
-                    const shapeObj: any = {
-                        type: ls.type,
-                        x1: ls.x1,
-                        y1: ls.y1,
-                        x2: ls.x2,
-                        y2: ls.y2,
-                        angleRad: ls.angleRad,
-                        isOutwards: shapeUi.getIsOutwards(),
-                        opacity: shapeUi.getOpacity(),
-                        isEraser: shapeUi.getIsEraser(),
-                        doLockAlpha: shapeUi.getDoLockAlpha(),
-                    };
+    // 5) draw overlay based on liveShape
+    const makeShapeObj = () => {
+        if (!this.liveShape) return null;
+        const ls = this.liveShape;
+        const shapeObj: any = {
+            type: ls.type,
+            x1: ls.x1,
+            y1: ls.y1,
+            x2: ls.x2,
+            y2: ls.y2,
+            angleRad: ls.angleRad,
+            isOutwards: shapeUi.getIsOutwards(),
+            opacity: shapeUi.getOpacity(),
+            isEraser: shapeUi.getIsEraser(),
+            doLockAlpha: shapeUi.getDoLockAlpha(),
+        };
 
-                    if (ls.type === 'line') {
-                        shapeObj.strokeRgb = this.klColorSlider.getColor();
-                        shapeObj.lineWidth = shapeUi.getLineWidth();
-                        shapeObj.isAngleSnap = shapeUi.getIsSnap();
-                    } else {
-                        shapeObj.isFixedRatio = shapeUi.getIsFixed();
-                        if (shapeUi.getMode() === 'stroke') {
-                            shapeObj.strokeRgb = this.klColorSlider.getColor();
-                            shapeObj.lineWidth = shapeUi.getLineWidth();
-                        } else {
-                            shapeObj.fillRgb = this.klColorSlider.getColor();
-                        }
-                    }
-                    return shapeObj;
-                };
+        if (ls.type === 'line') {
+            shapeObj.strokeRgb = this.klColorSlider.getColor();
+            shapeObj.lineWidth = shapeUi.getLineWidth();
+            shapeObj.isAngleSnap = shapeUi.getIsSnap();
+        } else {
+            shapeObj.isFixedRatio = shapeUi.getIsFixed();
+            if (shapeUi.getMode() === 'stroke') {
+                shapeObj.strokeRgb = this.klColorSlider.getColor();
+                shapeObj.lineWidth = shapeUi.getLineWidth();
+            } else {
+                shapeObj.fillRgb = this.klColorSlider.getColor();
+            }
+        }
+        return shapeObj;
+    };
 
-                this.klCanvas.setComposite(layerIndex, {
-                    draw: (ctx) => {
-                        const shapeObj = makeShapeObj();
-                        if (!shapeObj) return;
-                        KL.drawShape(ctx, shapeObj, undefined);
-                    },
-                });
-                this.easelProjectUpdater.update();
+    this.klCanvas.setComposite(layerIndex, {
+        draw: (ctx) => {
+            const shapeObj = makeShapeObj();
+            if (!shapeObj) return;
+            KL.drawShape(ctx, shapeObj, undefined);
+        },
+    });
+    this.easelProjectUpdater.update();
 
-                // optional: show Shape tab so user can tweak options
-                mainTabRow?.open('shape');
-                updateMainTabVisibility();
-            },
+    // optional: show Shape tab so user can tweak options
+    mainTabRow?.open('shape');
+    updateMainTabVisibility();
+},
+
 
         });
 

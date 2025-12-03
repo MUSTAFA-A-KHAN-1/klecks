@@ -209,7 +209,7 @@ export class ShapeRecognition {
 
     // --------- line detection (more tolerant of wobble) ---------
     private isLine(points: { x: number; y: number; time: number }[]): boolean {
-        if (points.length < 5) return false;
+        // if (points.length < ) return false;
 
         const start = points[0];
         const end = points[points.length - 1];
@@ -218,7 +218,7 @@ export class ShapeRecognition {
         const dy = end.y - start.y;
         const length = Math.sqrt(dx * dx + dy * dy);
 
-        if (length < 15) return false; // Too short to be a line
+        // if (length < 15) return false; // Too short to be a line
 
         let totalDeviation = 0;
         for (let i = 1; i < points.length - 1; i++) {
