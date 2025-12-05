@@ -95,11 +95,8 @@ export class ProjectViewport {
 
     private oldDPR = devicePixelRatio;
     private resizeListener = () => {
-        if (devicePixelRatio !== this.oldDPR) {
-            this.canvas.style.imageRendering =
-                Math.round(devicePixelRatio) !== devicePixelRatio ? '' : 'pixelated';
-            this.oldDPR = devicePixelRatio;
-        }
+        // Removed forced pixelated rendering to allow smooth brush strokes
+        this.oldDPR = devicePixelRatio;
     };
 
     // ----------------------------------- public -----------------------------------
@@ -122,8 +119,7 @@ export class ProjectViewport {
         css(this.canvas, {
             width: this.doFillParent ? '100%' : this.width + 'px',
             height: this.doFillParent ? '100%' : this.height + 'px',
-            imageRendering:
-                Math.round(devicePixelRatio) !== devicePixelRatio ? undefined : 'pixelated',
+            // Removed forced pixelated rendering to allow smooth brush strokes
             display: 'block',
         });
         window.addEventListener('resize', this.resizeListener);
@@ -171,14 +167,12 @@ export class ProjectViewport {
 
         this.ctx.save();
 
-        if (
-            renderedTransform.scaleX >= 4 ||
-            (renderedTransform.scaleX === 1 && renderedTransform.angleDeg === 0)
-        ) {
+        // Enable smoothing for smooth brush strokes, only disable at very high zoom levels
+        if (renderedTransform.scaleX >= 10) {
             this.ctx.imageSmoothingEnabled = false;
         } else {
             this.ctx.imageSmoothingEnabled = true;
-            this.ctx.imageSmoothingQuality = 'low'; // art.scale >= 1 ? 'low' : 'medium';
+            this.ctx.imageSmoothingQuality = 'high';
         }
         // this.ctx.imageSmoothingEnabled = false;
 

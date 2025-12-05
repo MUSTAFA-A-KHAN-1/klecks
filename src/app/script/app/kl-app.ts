@@ -147,7 +147,7 @@ export class KlApp {
     private readonly easel: Easel<TKlAppToolId>;
     private readonly easelProjectUpdater: EaselProjectUpdater<TKlAppToolId>;
     private readonly easelBrush: EaselBrush;
-    private readonly collapseThreshold: number = 820;
+    private readonly collapseThreshold: number = 200000;
     private readonly mobileUi: MobileUi;
     private readonly mobileBrushUi: MobileBrushUi;
     private readonly mobileColorUi: MobileColorUi;
