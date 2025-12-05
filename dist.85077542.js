@@ -207,11 +207,11 @@
       });
     }
   }
-})({"fwP1f":[function(require,module,exports,__globalThis) {
+})({"6WCtm":[function(require,module,exports,__globalThis) {
 var global = arguments[3];
 var HMR_HOST = null;
 var HMR_PORT = null;
-var HMR_SERVER_PORT = 1234;
+var HMR_SERVER_PORT = 45351;
 var HMR_SECURE = false;
 var HMR_ENV_HASH = "439701173a9199ea";
 var HMR_USE_SSE = false;
@@ -20117,6 +20117,6 @@ var LayerCompCapturedInfo;
     LayerCompCapturedInfo[LayerCompCapturedInfo["Appearance"] = 4] = "Appearance";
 })(LayerCompCapturedInfo = exports.LayerCompCapturedInfo || (exports.LayerCompCapturedInfo = {}));
 
-},{}]},["fwP1f"], null, "parcelRequire94c2", {})
+},{}]},["6WCtm"], null, "parcelRequire94c2", {})
 
 //# sourceMappingURL=dist.85077542.js.map

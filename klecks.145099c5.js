@@ -207,11 +207,11 @@
       });
     }
   }
-})({"fsWvP":[function(require,module,exports,__globalThis) {
+})({"bbcXg":[function(require,module,exports,__globalThis) {
 var global = arguments[3];
 var HMR_HOST = null;
 var HMR_PORT = null;
-var HMR_SERVER_PORT = 1234;
+var HMR_SERVER_PORT = 45351;
 var HMR_SECURE = false;
 var HMR_ENV_HASH = "439701173a9199ea";
 var HMR_USE_SSE = false;
@@ -1119,7 +1119,7 @@ class KlApp {
     }
     // ----------------------------------- public -----------------------------------
     constructor(p){
-        this.collapseThreshold = 820;
+        this.collapseThreshold = 200000;
         this.toolWidth = 271;
         this.lastSavedHistoryIndex = 0;
         this.drawMode = 'freehand';
@@ -10780,10 +10780,8 @@ class ProjectViewport {
         };
         this.oldDPR = devicePixelRatio;
         this.resizeListener = ()=>{
-            if (devicePixelRatio !== this.oldDPR) {
-                this.canvas.style.imageRendering = Math.round(devicePixelRatio) !== devicePixelRatio ? '' : 'pixelated';
-                this.oldDPR = devicePixelRatio;
-            }
+            // Removed forced pixelated rendering to allow smooth brush strokes
+            this.oldDPR = devicePixelRatio;
         };
         this.width = p.width;
         this.height = p.height;
@@ -10801,7 +10799,7 @@ class ProjectViewport {
         (0, _base.css)(this.canvas, {
             width: this.doFillParent ? '100%' : this.width + 'px',
             height: this.doFillParent ? '100%' : this.height + 'px',
-            imageRendering: Math.round(devicePixelRatio) !== devicePixelRatio ? undefined : 'pixelated',
+            // Removed forced pixelated rendering to allow smooth brush strokes
             display: 'block'
         });
         window.addEventListener('resize', this.resizeListener);
@@ -10838,10 +10836,11 @@ class ProjectViewport {
         };
         const renderedMat = (0, _createMatrixFromTransform.createMatrixFromTransform)(renderedTransform);
         this.ctx.save();
-        if (renderedTransform.scaleX >= 4 || renderedTransform.scaleX === 1 && renderedTransform.angleDeg === 0) this.ctx.imageSmoothingEnabled = false;
+        // Enable smoothing for smooth brush strokes, only disable at very high zoom levels
+        if (renderedTransform.scaleX >= 10) this.ctx.imageSmoothingEnabled = false;
         else {
             this.ctx.imageSmoothingEnabled = true;
-            this.ctx.imageSmoothingQuality = 'low'; // art.scale >= 1 ? 'low' : 'medium';
+            this.ctx.imageSmoothingQuality = 'high';
         }
         // this.ctx.imageSmoothingEnabled = false;
         if (this.drawBackground) {
@@ -48363,6 +48362,6 @@ class MobileFloatingWindow {
     }
 }
 
-},{"../../../bb/bb":"3zOvT","../../../bb/math/math":"7x9Fp","../../../language/language":"mcywn","url:/src/app/img/ui/cancel.svg":"kcuhT","../../../bb/base/base":"it3mQ","@parcel/transformer-js/src/esmodule-helpers.js":"jnFvT"}]},["fsWvP","jcEgk"], "jcEgk", "parcelRequire94c2", {}, "./", "/")
+},{"../../../bb/bb":"3zOvT","../../../bb/math/math":"7x9Fp","../../../language/language":"mcywn","url:/src/app/img/ui/cancel.svg":"kcuhT","../../../bb/base/base":"it3mQ","@parcel/transformer-js/src/esmodule-helpers.js":"jnFvT"}]},["bbcXg","jcEgk"], "jcEgk", "parcelRequire94c2", {}, "./", "/")
 
 //# sourceMappingURL=klecks.145099c5.js.map
