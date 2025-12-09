@@ -101,6 +101,10 @@ Renaming a key across multiple language files:
     hint: 'Common brush/tool in image editing software. Smudges colors around canvas.',
     value: 'Smudge',
   },
+  "brush-glitter": {
+    hint: 'Brush that creates sparkly, glitter-like effects.',
+    value: 'Glitter',
+  },
 
   // brush settings (below that row of icons)
 

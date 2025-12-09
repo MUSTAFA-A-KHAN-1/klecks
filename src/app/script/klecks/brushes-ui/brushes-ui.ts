@@ -5,6 +5,7 @@ import { pixelBrushUi } from './pixel-brush-ui';
 import { eraserBrushUi } from './eraser-brush-ui';
 import { smudgeBrushUi } from './smudge-brush-ui';
 import { chemyBrushUi } from './chemy-brush-ui';
+import { glitterBrushUi } from './glitter-brush-ui';
 import { TBrushUi } from '../kl-types';
 
 /**
@@ -23,4 +24,5 @@ export const BRUSHES_UI: {
     chemyBrush: chemyBrushUi,
     smudgeBrush: smudgeBrushUi,
     eraserBrush: eraserBrushUi,
+    glitterBrush: glitterBrushUi,
 };

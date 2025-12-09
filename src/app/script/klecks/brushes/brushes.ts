@@ -5,6 +5,7 @@ import { PixelBrush } from './pixel-brush';
 import { EraserBrush } from './eraser-brush';
 import { SmudgeBrush } from './smudge-brush';
 import { ChemyBrush } from './chemy-brush';
+import { GlitterBrush } from './glitter-brush';
 
 export const BRUSHES = {
     PenBrush,
@@ -14,4 +15,5 @@ export const BRUSHES = {
     ChemyBrush,
     SmudgeBrush,
     EraserBrush,
+    GlitterBrush,
 };
