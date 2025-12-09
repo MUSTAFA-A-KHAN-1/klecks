@@ -11,6 +11,9 @@ import { MultiPolygon } from 'polygon-clipping';
 import { getSelectionPath2d } from '../../bb/multi-polygon/get-selection-path-2d';
 import { boundsOverlap, integerBounds } from '../../bb/math/math';
 import { getMultiPolyBounds } from '../../bb/multi-polygon/get-multi-polygon-bounds';
+import { tsParticles, type Engine } from '@tsparticles/engine';
+import type { Container } from '@tsparticles/engine';
+import { loadStarShape } from '@tsparticles/shape-star';
 
 const ALPHA_CIRCLE = 0;
 const ALPHA_CHALK = 1;
@@ -22,6 +25,7 @@ const TWO_PI = 2 * Math.PI;
 export class GlitterBrush {
     private context: CanvasRenderingContext2D = {} as CanvasRenderingContext2D;
     private klHistory: KlHistory = {} as KlHistory;
+    private particleContainer: Container | undefined = undefined;
 
     private settingHasOpacityPressure: boolean = false;
     private settingHasScatterPressure: boolean = false;
@@ -163,69 +167,111 @@ export class GlitterBrush {
             this.context.fillStyle = this.settingColorStr;
         }
 
-        // For glitter, draw multiple small sparkles instead of one big dot
-        const sparkleSize = Math.max(0.5, size / 4); // smaller sparkles
-        const sparkleRadius = size / 2; // radius around center to place sparkles
+        // For glitter, use tsparticles to create star-shaped sparkles
+        if (this.particleContainer) {
+            const sparkleSize = Math.max(0.5, size / 4); // smaller sparkles
+            const sparkleRadius = size / 2; // radius around center to place sparkles
 
-        for (let i = 0; i < this.settingSparkleCount; i++) {
-            let sparkleX = x;
-            let sparkleY = y;
+            // Create temporary particles for this sparkle burst
+            const particles = [];
+            for (let i = 0; i < this.settingSparkleCount; i++) {
+                let sparkleX = x;
+                let sparkleY = y;
 
-            if (scatter > 0) {
-                // scatter equally distributed over area of a circle
-                const scatterAngleRad = Math.random() * 2 * Math.PI;
-                const distance = Math.sqrt(Math.random()) * scatter;
-                sparkleX += Math.cos(scatterAngleRad) * distance;
-                sparkleY += Math.sin(scatterAngleRad) * distance;
+                if (scatter > 0) {
+                    // scatter equally distributed over area of a circle
+                    const scatterAngleRad = Math.random() * 2 * Math.PI;
+                    const distance = Math.sqrt(Math.random()) * scatter;
+                    sparkleX += Math.cos(scatterAngleRad) * distance;
+                    sparkleY += Math.sin(scatterAngleRad) * distance;
+                }
+
+                // Add random offset for glitter effect
+                const glitterAngle = Math.random() * TWO_PI;
+                const glitterDistance = Math.random() * sparkleRadius;
+                sparkleX += Math.cos(glitterAngle) * glitterDistance;
+                sparkleY += Math.sin(glitterAngle) * glitterDistance;
+
+                particles.push({
+                    position: { x: sparkleX, y: sparkleY },
+                    size: sparkleSize,
+                    color: this.settingColor,
+                    opacity: opacity,
+                });
+
+                const boundsSize = sparkleSize;
+                this.updateChangedTiles({
+                    x1: Math.floor(sparkleX - boundsSize),
+                    y1: Math.floor(sparkleY - boundsSize),
+                    x2: Math.ceil(sparkleX + boundsSize),
+                    y2: Math.ceil(sparkleY + boundsSize),
+                });
             }
 
-            // Add random offset for glitter effect
-            const glitterAngle = Math.random() * TWO_PI;
-            const glitterDistance = Math.random() * sparkleRadius;
-            sparkleX += Math.cos(glitterAngle) * glitterDistance;
-            sparkleY += Math.sin(glitterAngle) * glitterDistance;
+            // Render particles to canvas
+            this.renderParticlesToCanvas(particles);
+            this.hasDrawnDot = true;
+        } else {
+            // Fallback to original implementation if particles fail to initialize
+            const sparkleSize = Math.max(0.5, size / 4);
+            const sparkleRadius = size / 2;
 
-            const boundsSize = sparkleSize;
-            this.updateChangedTiles({
-                x1: Math.floor(sparkleX - boundsSize),
-                y1: Math.floor(sparkleY - boundsSize),
-                x2: Math.ceil(sparkleX + boundsSize),
-                y2: Math.ceil(sparkleY + boundsSize),
-            });
+            for (let i = 0; i < this.settingSparkleCount; i++) {
+                let sparkleX = x;
+                let sparkleY = y;
 
-            if (this.settingAlphaId === ALPHA_CIRCLE) {
-                this.context.beginPath();
-                this.context.arc(sparkleX, sparkleY, sparkleSize, 0, TWO_PI);
-                this.context.closePath();
-                this.context.fill();
-                this.hasDrawnDot = true;
-            } else if (this.settingAlphaId === ALPHA_SQUARE) {
-                if (angle !== undefined) {
+                if (scatter > 0) {
+                    const scatterAngleRad = Math.random() * 2 * Math.PI;
+                    const distance = Math.sqrt(Math.random()) * scatter;
+                    sparkleX += Math.cos(scatterAngleRad) * distance;
+                    sparkleY += Math.sin(scatterAngleRad) * distance;
+                }
+
+                const glitterAngle = Math.random() * TWO_PI;
+                const glitterDistance = Math.random() * sparkleRadius;
+                sparkleX += Math.cos(glitterAngle) * glitterDistance;
+                sparkleY += Math.sin(glitterAngle) * glitterDistance;
+
+                const boundsSize = sparkleSize;
+                this.updateChangedTiles({
+                    x1: Math.floor(sparkleX - boundsSize),
+                    y1: Math.floor(sparkleY - boundsSize),
+                    x2: Math.ceil(sparkleX + boundsSize),
+                    y2: Math.ceil(sparkleY + boundsSize),
+                });
+
+                if (this.settingAlphaId === ALPHA_CIRCLE) {
+                    this.context.beginPath();
+                    this.context.arc(sparkleX, sparkleY, sparkleSize, 0, TWO_PI);
+                    this.context.closePath();
+                    this.context.fill();
+                    this.hasDrawnDot = true;
+                } else if (this.settingAlphaId === ALPHA_SQUARE) {
+                    if (angle !== undefined) {
+                        this.context.save();
+                        this.context.translate(sparkleX, sparkleY);
+                        this.context.rotate((angle / 180) * Math.PI);
+                        this.context.fillRect(-sparkleSize, -sparkleSize, sparkleSize * 2, sparkleSize * 2);
+                        this.context.restore();
+                        this.hasDrawnDot = true;
+                    }
+                } else {
                     this.context.save();
                     this.context.translate(sparkleX, sparkleY);
-                    this.context.rotate((angle / 180) * Math.PI);
-                    this.context.fillRect(-sparkleSize, -sparkleSize, sparkleSize * 2, sparkleSize * 2);
+                    let targetMipmap = this.alphaCanvas128;
+                    if (sparkleSize <= 32 && sparkleSize > 16) {
+                        targetMipmap = this.alphaCanvas64;
+                    } else if (sparkleSize <= 16) {
+                        targetMipmap = this.alphaCanvas32;
+                    }
+                    this.context.scale(sparkleSize, sparkleSize);
+                    if (this.settingAlphaId === ALPHA_CHALK) {
+                        this.context.rotate(((sparkleX + sparkleY) * 53123) % TWO_PI);
+                    }
+                    this.context.drawImage(targetMipmap, -1, -1, 2, 2);
                     this.context.restore();
                     this.hasDrawnDot = true;
                 }
-            } else {
-                // other brush alphas
-                this.context.save();
-                this.context.translate(sparkleX, sparkleY);
-                let targetMipmap = this.alphaCanvas128;
-                if (sparkleSize <= 32 && sparkleSize > 16) {
-                    targetMipmap = this.alphaCanvas64;
-                } else if (sparkleSize <= 16) {
-                    targetMipmap = this.alphaCanvas32;
-                }
-                this.context.scale(sparkleSize, sparkleSize);
-                if (this.settingAlphaId === ALPHA_CHALK) {
-                    this.context.rotate(((sparkleX + sparkleY) * 53123) % TWO_PI); // without mod it sometimes looks different
-                }
-                this.context.drawImage(targetMipmap, -1, -1, 2, 2);
-
-                this.context.restore();
-                this.hasDrawnDot = true;
             }
         }
     }
@@ -274,8 +320,109 @@ export class GlitterBrush {
         this.context.restore();
     }
 
+    // ----------------------------------- private -----------------------------------
+    private async initializeParticles(): Promise<void> {
+        if (this.particleContainer) return;
+
+        try {
+            // Initialize tsparticles engine
+            this.particleContainer = await tsParticles.load({
+                id: "glitter-brush",
+                options: {
+                    background: {
+                        color: {
+                            value: "transparent",
+                        },
+                    },
+                    fpsLimit: 60,
+                    particles: {
+                        number: {
+                            value: 0, // We'll add particles dynamically
+                        },
+                        color: {
+                            value: `rgb(${this.settingColor.r}, ${this.settingColor.g}, ${this.settingColor.b})`,
+                        },
+                        shape: {
+                            type: "star",
+                        },
+                        opacity: {
+                            value: 1,
+                        },
+                        size: {
+                            value: 2,
+                        },
+                        move: {
+                            enable: false, // Static particles for brush
+                        },
+                    },
+                    detectRetina: true,
+                },
+            });
+
+            // Load star shape
+            await loadStarShape(tsParticles);
+        } catch (error) {
+            console.warn("Failed to initialize tsparticles for glitter brush:", error);
+            this.particleContainer = undefined;
+        }
+    }
+
+    private renderParticlesToCanvas(particles: any[]): void {
+        if (!this.particleContainer) return;
+
+        // For now, implement a simple star drawing using canvas
+        // This is a fallback since tsparticles is designed for animated systems
+        this.context.save();
+        this.context.globalCompositeOperation = this.settingLockLayerAlpha ? 'source-atop' : 'source-over';
+
+        particles.forEach(particle => {
+            this.context.save();
+            this.context.globalAlpha = particle.opacity;
+            this.context.fillStyle = `rgb(${particle.color.r}, ${particle.color.g}, ${particle.color.b})`;
+
+            // Draw a simple star shape
+            this.drawStar(particle.position.x, particle.position.y, particle.size);
+
+            this.context.restore();
+        });
+
+        this.context.restore();
+    }
+
+    private drawStar(cx: number, cy: number, size: number): void {
+        const spikes = 5;
+        const outerRadius = size;
+        const innerRadius = size * 0.5;
+
+        let rot = Math.PI / 2 * 3;
+        let x = cx;
+        let y = cy;
+        const step = Math.PI / spikes;
+
+        this.context.beginPath();
+        this.context.moveTo(cx, cy - outerRadius);
+
+        for (let i = 0; i < spikes; i++) {
+            x = cx + Math.cos(rot) * outerRadius;
+            y = cy + Math.sin(rot) * outerRadius;
+            this.context.lineTo(x, y);
+            rot += step;
+
+            x = cx + Math.cos(rot) * innerRadius;
+            y = cy + Math.sin(rot) * innerRadius;
+            this.context.lineTo(x, y);
+            rot += step;
+        }
+
+        this.context.lineTo(cx, cy - outerRadius);
+        this.context.closePath();
+        this.context.fill();
+    }
+
     // ----------------------------------- public -----------------------------------
-    constructor() {}
+    constructor() {
+        this.initializeParticles();
+    }
 
     // ---- interface ----
 
